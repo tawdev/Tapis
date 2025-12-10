@@ -1,0 +1,29 @@
+# Fichiers de configuration locaux
+config/local.php
+
+# Fichiers uploadés
+assets/images/products/*
+!assets/images/products/.gitkeep
+
+# Fichiers de log
+*.log
+
+# Fichiers temporaires
+*.tmp
+*.temp
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Fichiers de sauvegarde
+*.bak
+*.backup
+
