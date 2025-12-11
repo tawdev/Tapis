@@ -12,7 +12,7 @@ if (isset($_SESSION['cart']) && is_array($_SESSION['cart'])) {
         <div class="header-content">
             <div class="logo">
                 <a href="index.php">
-                    <h1>Tapis</h1>
+                    <h1>waootapis</h1>
                 </a>
             </div>
             <nav class="main-nav">

@@ -151,8 +151,19 @@ const mobileMenuToggle = document.querySelector('.mobile-menu-toggle');
 const mainNav = document.querySelector('.main-nav');
 
 if (mobileMenuToggle && mainNav) {
-    mobileMenuToggle.addEventListener('click', function() {
-        mainNav.style.display = mainNav.style.display === 'block' ? 'none' : 'block';
+    mobileMenuToggle.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        mainNav.classList.toggle('active');
+    });
+
+    // Fermer le menu en cliquant en dehors
+    document.addEventListener('click', function(e) {
+        if (mainNav && mobileMenuToggle) {
+            if (!mainNav.contains(e.target) && !mobileMenuToggle.contains(e.target)) {
+                mainNav.classList.remove('active');
+            }
+        }
     });
 }
 

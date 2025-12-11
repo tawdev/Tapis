@@ -18,7 +18,7 @@ require_once 'config/functions.php';
         <div class="container">
             <div class="page-header">
                 <h1>À propos de nous</h1>
-                <p>Découvrez l'histoire de Tapis</p>
+                <p>Découvrez l'histoire de waootapis</p>
             </div>
 
             <div class="about-content">

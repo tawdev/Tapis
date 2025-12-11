@@ -2,7 +2,7 @@
     <div class="container">
         <div class="footer-content">
             <div class="footer-section">
-                <h3>Tapis</h3>
+                <h3>waootapis</h3>
                 <p>Votre destination pour des tapis de luxe authentiques et élégants.</p>
             </div>
             <div class="footer-section">
@@ -11,7 +11,6 @@
                     <li><a href="index.php">Accueil</a></li>
                     <li><a href="products.php">Produits</a></li>
                     <li><a href="cart.php">Panier</a></li>
-                    <li><a href="tracking.php">Suivi de Commande</a></li>
                 </ul>
             </div>
             <div class="footer-section">
@@ -24,13 +23,13 @@
             </div>
             <div class="footer-section">
                 <h4>Contact</h4>
-                <p>Email: contact@tapis.ma</p>
+                <p>Email: contact@waootapis.ma</p>
                 <p>Téléphone: +212 674-862173</p>
                 <p>Adresse: N, TAW10, lot Iguder, 48 AV Alla El Fassi Marrakech 40000, Morocco</p>
             </div>
         </div>
         <div class="footer-bottom">
-            <p>&copy; <?php echo date('Y'); ?> Tapis. Tous droits réservés.</p>
+            <p>&copy; <?php echo date('Y'); ?> waootapis. Tous droits réservés.</p>
         </div>
     </div>
 </footer>
