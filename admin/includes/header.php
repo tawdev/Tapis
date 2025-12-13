@@ -5,6 +5,7 @@ $pages = [
     'products.php' => 'Produits',
     'product_form.php' => 'Produits',
     'categories.php' => 'Catégories',
+    'types_categories.php' => 'Types de Catégories',
     'orders.php' => 'Commandes',
     'order.php' => 'Commandes',
     'messages.php' => 'Messages',
@@ -22,6 +23,7 @@ $active_section = $pages[$current_page] ?? '';
                 <li><a href="index.php" class="<?php echo ($current_page == 'index.php') ? 'active' : ''; ?>">Dashboard</a></li>
                 <li><a href="products.php" class="<?php echo (in_array($current_page, ['products.php', 'product_form.php'])) ? 'active' : ''; ?>">Produits</a></li>
                 <li><a href="categories.php" class="<?php echo ($current_page == 'categories.php') ? 'active' : ''; ?>">Catégories</a></li>
+                <li><a href="types_categories.php" class="<?php echo ($current_page == 'types_categories.php') ? 'active' : ''; ?>">Types de Catégories</a></li>
                 <li><a href="orders.php" class="<?php echo (in_array($current_page, ['orders.php', 'order.php'])) ? 'active' : ''; ?>">Commandes</a></li>
                 <li><a href="messages.php" class="<?php echo (in_array($current_page, ['messages.php', 'message.php'])) ? 'active' : ''; ?>">Messages</a></li>
             </ul>

@@ -32,10 +32,65 @@ if (!$success && !empty($_SESSION['cart'])) {
     $products = $stmt->fetchAll();
 
     foreach ($products as $product) {
-        $quantity = $_SESSION['cart'][$product['id']];
-        $price = $product['sale_price'] ?: $product['price'];
-        $subtotal += $price * $quantity;
-        $cartItems[] = ['product' => $product, 'quantity' => $quantity];
+        $productId = $product['id'];
+        
+        // Chercher l'item dans le panier (peut être avec un ID modifié pour les dimensions différentes)
+        $cartItemData = null;
+        foreach ($_SESSION['cart'] as $key => $item) {
+            // Extraire l'ID du produit de la clé (peut être "id" ou "id_timestamp")
+            $keyProductId = (int)explode('_', $key)[0];
+            if ($keyProductId == $productId) {
+                $cartItemData = $item;
+                break;
+            }
+        }
+        
+        // Compatibilité avec l'ancien format
+        if (!$cartItemData && isset($_SESSION['cart'][$productId])) {
+            $cartItemData = $_SESSION['cart'][$productId];
+        }
+        
+        if ($cartItemData) {
+            // Nouveau format avec dimensions
+            if (is_array($cartItemData)) {
+                $quantity = $cartItemData['quantity'];
+                $length = $cartItemData['length'] ?? 0;
+                $width = $cartItemData['width'] ?? 0;
+                $itemPrice = $cartItemData['item_price'] ?? ($product['sale_price'] ?: $product['price']);
+                $price = $product['sale_price'] ?: $product['price'];
+                
+                // Calculer le sous-total avec le prix calculé si disponible
+                if ($length > 0 && $width > 0 && $itemPrice > 0) {
+                    $subtotal += $itemPrice * $quantity;
+                } else {
+                    $subtotal += $price * $quantity;
+                }
+                
+                // Récupérer la couleur si disponible
+                $color = isset($cartItemData['color']) && !empty(trim($cartItemData['color'])) ? trim(clean($cartItemData['color'])) : null;
+                
+                $cartItems[] = [
+                    'product' => $product,
+                    'quantity' => $quantity,
+                    'length' => $length,
+                    'width' => $width,
+                    'color' => $color,
+                    'item_price' => $itemPrice
+                ];
+            } else {
+                // Ancien format (compatibilité)
+                $quantity = $cartItemData;
+                $price = $product['sale_price'] ?: $product['price'];
+                $subtotal += $price * $quantity;
+                $cartItems[] = [
+                    'product' => $product,
+                    'quantity' => $quantity,
+                    'length' => 0,
+                    'width' => 0,
+                    'item_price' => $price
+                ];
+            }
+        }
     }
 
     $shipping = $subtotal >= 500 ? 0 : 50;
@@ -88,17 +143,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$success) {
                 $product = $item['product'];
                 $quantity = $item['quantity'];
                 $price = $product['sale_price'] ?: $product['price'];
-                $itemSubtotal = $price * $quantity;
+                
+                // Récupérer les dimensions, le prix calculé et la couleur si disponibles
+                $length = isset($item['length']) ? (float)$item['length'] : 0;
+                $width = isset($item['width']) ? (float)$item['width'] : 0;
+                $itemPrice = isset($item['item_price']) ? (float)$item['item_price'] : $price;
+                $color = isset($item['color']) && !empty(trim($item['color'])) ? trim(clean($item['color'])) : null;
+                
+                // Calculer la surface si les dimensions sont disponibles
+                $surfaceM2 = 0;
+                if ($length > 0 && $width > 0) {
+                    $surfaceM2 = ($length * $width) / 10000; // Conversion cm² en m²
+                }
+                
+                // Utiliser le prix calculé si disponible, sinon prix unitaire × quantité
+                $itemSubtotal = ($length > 0 && $width > 0 && $itemPrice > 0) ? $itemPrice * $quantity : $price * $quantity;
 
-                $stmt = $db->prepare("INSERT INTO order_items (order_id, product_id, product_name, product_price, quantity, subtotal) 
-                                      VALUES (:order_id, :product_id, :product_name, :product_price, :quantity, :subtotal)");
+                $stmt = $db->prepare("INSERT INTO order_items (order_id, product_id, product_name, product_price, quantity, subtotal, length_cm, width_cm, surface_m2, unit_price, calculated_price, color) 
+                                      VALUES (:order_id, :product_id, :product_name, :product_price, :quantity, :subtotal, :length_cm, :width_cm, :surface_m2, :unit_price, :calculated_price, :color)");
                 $stmt->execute([
                     ':order_id' => $orderId,
                     ':product_id' => $product['id'],
                     ':product_name' => $product['name'],
                     ':product_price' => $price,
                     ':quantity' => $quantity,
-                    ':subtotal' => $itemSubtotal
+                    ':subtotal' => $itemSubtotal,
+                    ':length_cm' => $length > 0 ? $length : null,
+                    ':width_cm' => $width > 0 ? $width : null,
+                    ':surface_m2' => $surfaceM2 > 0 ? $surfaceM2 : null,
+                    ':unit_price' => $price,
+                    ':calculated_price' => ($length > 0 && $width > 0 && $itemPrice > 0) ? $itemPrice : null,
+                    ':color' => $color
                 ]);
             }
 
@@ -184,6 +259,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$success) {
                     });
                 </script>
             <?php else: ?>
+                <a href="cart.php" class="btn-back">
+                    <span>←</span> Retour au panier
+                </a>
+                
                 <h1>Finaliser la commande</h1>
 
                 <?php if (!empty($errors)): ?>

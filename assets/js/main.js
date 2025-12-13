@@ -32,11 +32,40 @@ document.addEventListener('DOMContentLoaded', function() {
     const addToCartButtons = document.querySelectorAll('.btn-add-cart, #add-to-cart-btn');
     
     addToCartButtons.forEach(button => {
+        // Vérifier si le bouton a un gestionnaire personnalisé (pour les pages produit avec modal)
+        if (button.id === 'add-to-cart-btn' && (button.hasAttribute('data-type-category') || button.hasAttribute('data-custom-handler'))) {
+            // Le gestionnaire est géré dans product.php, ne pas ajouter de listener ici
+            console.log('Bouton add-to-cart-btn ignoré par main.js (gestionnaire personnalisé)');
+            return;
+        }
+        
+        // Vérifier si le bouton a déjà un gestionnaire (pour éviter les doublons)
+        if (button.hasAttribute('data-custom-handler')) {
+            console.log('Bouton ignoré par main.js (data-custom-handler)');
+            return;
+        }
+        
         button.addEventListener('click', function(e) {
             e.preventDefault();
             const productId = this.getAttribute('data-product-id');
             const quantityInput = document.getElementById('product-quantity');
             const quantity = quantityInput ? parseInt(quantityInput.value) : 1;
+            
+            // Récupérer les dimensions si disponibles (depuis le modal)
+            const lengthInput = document.getElementById('modal-length');
+            const widthInput = document.getElementById('modal-width');
+            const totalPriceElement = document.getElementById('modal-total-price');
+            
+            const length = lengthInput ? parseFloat(lengthInput.value) || 0 : 0;
+            const width = widthInput ? parseFloat(widthInput.value) || 0 : 0;
+            
+            // Calculer le prix si les dimensions sont fournies
+            let calculatedPrice = 0;
+            if (length > 0 && width > 0 && totalPriceElement) {
+                // Extraire le prix total du texte (format: "1 598,00 MAD")
+                const priceText = totalPriceElement.textContent.replace(/[^\d,]/g, '').replace(',', '.');
+                calculatedPrice = parseFloat(priceText) || 0;
+            }
             
             if (!productId) return;
             
@@ -48,6 +77,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const formData = new FormData();
             formData.append('product_id', productId);
             formData.append('quantity', quantity);
+            if (length > 0 && width > 0) {
+                formData.append('length', length);
+                formData.append('width', width);
+                formData.append('calculated_price', calculatedPrice);
+            }
             
             fetch('api/add_to_cart.php', {
                 method: 'POST',

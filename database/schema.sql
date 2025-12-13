@@ -9,9 +9,35 @@ CREATE TABLE IF NOT EXISTS categories (
     name VARCHAR(100) NOT NULL,
     slug VARCHAR(100) NOT NULL UNIQUE,
     description TEXT,
-    image VARCHAR(255),
+    image VARCHAR(255) NULL COMMENT 'Chemin vers l\'image de la catégorie (ex: assets/images/categories/nom-image.jpg)',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Table des types de catégories (Sous-catégories)
+CREATE TABLE IF NOT EXISTS types_categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category_id INT NOT NULL COMMENT 'Référence à la catégorie parente',
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    image VARCHAR(255) NULL COMMENT 'Chemin vers l\'image du type de catégorie (ex: assets/images/types_categories/nom-image.jpg)',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+    INDEX idx_category (category_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Table des types de catégories (Sous-catégories)
+CREATE TABLE IF NOT EXISTS types_categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category_id INT NOT NULL COMMENT 'Référence à la catégorie parente',
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    image VARCHAR(255) NULL COMMENT 'Chemin vers l\'image du type de catégorie (ex: assets/images/types_categories/nom-image.jpg)',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+    INDEX idx_category (category_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Table des produits
@@ -24,9 +50,10 @@ CREATE TABLE IF NOT EXISTS products (
     price DECIMAL(10, 2) NOT NULL,
     sale_price DECIMAL(10, 2) DEFAULT NULL,
     category_id INT NOT NULL,
+    type_category_id INT NULL COMMENT 'Référence au type de catégorie (sous-catégorie)',
     material VARCHAR(100),
     size VARCHAR(50),
-    color VARCHAR(50),
+    color TEXT NULL COMMENT 'Couleurs du produit au format JSON: [{"name":"Rouge","index":1,"image":"path"},...] ou couleur simple (ancien format)',
     stock INT DEFAULT 0,
     featured BOOLEAN DEFAULT 0,
     best_seller BOOLEAN DEFAULT 0,
@@ -34,7 +61,9 @@ CREATE TABLE IF NOT EXISTS products (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+    FOREIGN KEY (type_category_id) REFERENCES types_categories(id) ON DELETE SET NULL,
     INDEX idx_category (category_id),
+    INDEX idx_type_category (type_category_id),
     INDEX idx_status (status),
     INDEX idx_featured (featured),
     INDEX idx_best_seller (best_seller)
@@ -80,11 +109,18 @@ CREATE TABLE IF NOT EXISTS order_items (
     product_price DECIMAL(10, 2) NOT NULL,
     quantity INT NOT NULL,
     subtotal DECIMAL(10, 2) NOT NULL,
+    length_cm DECIMAL(10, 2) NULL COMMENT 'Longueur en centimètres',
+    width_cm DECIMAL(10, 2) NULL COMMENT 'Largeur en centimètres',
+    surface_m2 DECIMAL(10, 4) NULL COMMENT 'Surface calculée en m²',
+    unit_price DECIMAL(10, 2) NULL COMMENT 'Prix unitaire au m² au moment de la commande',
+    calculated_price DECIMAL(10, 2) NULL COMMENT 'Prix calculé selon les dimensions (length × width × unit_price)',
+    color VARCHAR(50) NULL COMMENT 'Couleur sélectionnée par le client',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
     INDEX idx_order (order_id),
-    INDEX idx_product (product_id)
+    INDEX idx_product (product_id),
+    INDEX idx_dimensions (length_cm, width_cm)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Table des messages de contact
@@ -103,12 +139,13 @@ CREATE TABLE IF NOT EXISTS contact_messages (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Insertion de données de test
-INSERT INTO categories (name, slug, description) VALUES
-('Moderne', 'moderne', 'Tapis au design moderne et contemporain'),
-('Classique', 'classique', 'Tapis classiques intemporels'),
-('Oriental', 'oriental', 'Tapis orientaux authentiques'),
-('Turc', 'turk', 'Tapis turcs de qualité'),
-('Marocain', 'marocain', 'Tapis marocains traditionnels');
+-- Note: La colonne 'image' est optionnelle et peut être NULL
+INSERT INTO categories (name, slug, description, image) VALUES
+('Moderne', 'moderne', 'Tapis au design moderne et contemporain', NULL),
+('Classique', 'classique', 'Tapis classiques intemporels', NULL),
+('Oriental', 'oriental', 'Tapis orientaux authentiques', NULL),
+('Turc', 'turk', 'Tapis turcs de qualité', NULL),
+('Marocain', 'marocain', 'Tapis marocains traditionnels', NULL);
 
 -- Insertion de produits de test
 INSERT INTO products (name, slug, description, short_description, price, sale_price, category_id, material, size, color, stock, featured, best_seller) VALUES
@@ -126,4 +163,15 @@ INSERT INTO product_images (product_id, image_path, is_primary, display_order) V
 (3, 'assets/images/products/tapis-marocain-1.jpg', 1, 1),
 (4, 'assets/images/products/tapis-turk-1.jpg', 1, 1),
 (5, 'assets/images/products/tapis-persan-1.jpg', 1, 1);
+
+-- Insertion de données de test pour les types de catégories (Sous-catégories)
+-- Note: La colonne 'image' est optionnelle et peut être NULL
+INSERT INTO types_categories (category_id, name, description, image) VALUES
+(1, 'Tapis Moderne Minimaliste', 'Tapis modernes avec design minimaliste et épuré', NULL),
+(1, 'Tapis Moderne Coloré', 'Tapis modernes aux couleurs vives et contemporaines', NULL),
+(2, 'Tapis Classique Persan', 'Tapis persans classiques traditionnels aux motifs raffinés', NULL),
+(2, 'Tapis Classique Européen', 'Tapis classiques de style européen élégant', NULL),
+(3, 'Tapis Oriental Traditionnel', 'Tapis orientaux aux motifs traditionnels authentiques', NULL),
+(5, 'Tapis Marocain Beni Ourain', 'Tapis marocains Beni Ourain authentiques tissés à la main', NULL),
+(5, 'Tapis Marocain Azilal', 'Tapis marocains Azilal colorés et vibrants', NULL);
 

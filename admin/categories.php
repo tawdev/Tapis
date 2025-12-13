@@ -20,6 +20,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $name = trim($_POST['name'] ?? '');
         $description = trim($_POST['description'] ?? '');
         $categoryId = isset($_POST['category_id']) ? (int)$_POST['category_id'] : 0;
+        $imagePath = null;
+        
+        // Récupérer l'image existante si modification
+        if ($action === 'edit' && $categoryId > 0) {
+            $stmt = $db->prepare("SELECT image FROM categories WHERE id = :id");
+            $stmt->execute([':id' => $categoryId]);
+            $existingCategory = $stmt->fetch();
+            $imagePath = $existingCategory['image'] ?? null;
+        }
+        
+        // Gestion de l'upload d'image
+        if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+            $file = $_FILES['image'];
+            $allowed = ['jpg', 'jpeg', 'png', 'webp'];
+            $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+            
+            if (!in_array($ext, $allowed)) {
+                $errors[] = "Format d'image non autorisé (jpg, jpeg, png, webp uniquement)";
+            } elseif ($file['size'] > 5000000) { // 5MB
+                $errors[] = "Fichier trop volumineux (max 5MB)";
+            } else {
+                // Créer le dossier s'il n'existe pas
+                $uploadDir = '../assets/images/categories/';
+                if (!is_dir($uploadDir)) {
+                    mkdir($uploadDir, 0777, true);
+                }
+                
+                // Supprimer l'ancienne image si elle existe
+                if ($imagePath && file_exists('../' . $imagePath)) {
+                    unlink('../' . $imagePath);
+                }
+                
+                // Générer un nom unique
+                $filename = uniqid() . '_' . time() . '.' . $ext;
+                $targetPath = $uploadDir . $filename;
+                
+                if (move_uploaded_file($file['tmp_name'], $targetPath)) {
+                    $imagePath = 'assets/images/categories/' . $filename;
+                } else {
+                    $errors[] = "Erreur lors de l'upload de l'image";
+                }
+            }
+        }
         
         if (empty($name)) {
             $errors[] = "Le nom est requis";
@@ -27,18 +70,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $slug = generateSlug($name);
             
             if ($action === 'add') {
-                $stmt = $db->prepare("INSERT INTO categories (name, slug, description) VALUES (:name, :slug, :description)");
-                $stmt->execute([':name' => $name, ':slug' => $slug, ':description' => $description]);
+                $stmt = $db->prepare("INSERT INTO categories (name, slug, description, image) VALUES (:name, :slug, :description, :image)");
+                $stmt->execute([
+                    ':name' => $name, 
+                    ':slug' => $slug, 
+                    ':description' => $description,
+                    ':image' => $imagePath
+                ]);
                 $success = true;
             } else {
-                $stmt = $db->prepare("UPDATE categories SET name = :name, slug = :slug, description = :description WHERE id = :id");
-                $stmt->execute([':id' => $categoryId, ':name' => $name, ':slug' => $slug, ':description' => $description]);
+                if ($imagePath) {
+                    $stmt = $db->prepare("UPDATE categories SET name = :name, slug = :slug, description = :description, image = :image WHERE id = :id");
+                    $stmt->execute([
+                        ':id' => $categoryId, 
+                        ':name' => $name, 
+                        ':slug' => $slug, 
+                        ':description' => $description,
+                        ':image' => $imagePath
+                    ]);
+                } else {
+                    $stmt = $db->prepare("UPDATE categories SET name = :name, slug = :slug, description = :description WHERE id = :id");
+                    $stmt->execute([
+                        ':id' => $categoryId, 
+                        ':name' => $name, 
+                        ':slug' => $slug, 
+                        ':description' => $description
+                    ]);
+                }
                 $success = true;
             }
         }
     } elseif ($action === 'delete') {
         $categoryId = isset($_POST['category_id']) ? (int)$_POST['category_id'] : 0;
         if ($categoryId > 0) {
+            // Récupérer l'image avant suppression
+            $stmt = $db->prepare("SELECT image FROM categories WHERE id = :id");
+            $stmt->execute([':id' => $categoryId]);
+            $category = $stmt->fetch();
+            
+            // Supprimer l'image si elle existe
+            if ($category && $category['image'] && file_exists('../' . $category['image'])) {
+                unlink('../' . $category['image']);
+            }
+            
             $stmt = $db->prepare("DELETE FROM categories WHERE id = :id");
             $stmt->execute([':id' => $categoryId]);
             $success = true;
@@ -67,23 +141,30 @@ $categories = $stmt->fetchAll();
             <h1>Gestion des Catégories</h1>
 
             <?php if ($success): ?>
-                <div class="alert alert-success">Opération réussie !</div>
+                <div class="alert alert-success">
+                    <span class="alert-icon">✅</span>
+                    <span>Opération réussie !</span>
+                </div>
             <?php endif; ?>
 
             <?php if (!empty($errors)): ?>
                 <div class="alert alert-error">
-                    <ul>
-                        <?php foreach ($errors as $error): ?>
-                            <li><?php echo clean($error); ?></li>
-                        <?php endforeach; ?>
-                    </ul>
+                    <span class="alert-icon">⚠️</span>
+                    <div class="alert-content">
+                        <strong>Erreur(s) :</strong>
+                        <ul>
+                            <?php foreach ($errors as $error): ?>
+                                <li><?php echo clean($error); ?></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
                 </div>
             <?php endif; ?>
 
             <!-- Formulaire d'ajout/modification -->
             <div class="admin-section">
                 <h2 id="form-title">Ajouter une catégorie</h2>
-                <form method="POST" class="admin-form" id="category-form">
+                <form method="POST" enctype="multipart/form-data" class="admin-form" id="category-form">
                     <input type="hidden" name="action" id="form-action" value="add">
                     <input type="hidden" name="category_id" id="form-category-id" value="0">
                     
@@ -97,8 +178,20 @@ $categories = $stmt->fetchAll();
                         <textarea id="description" name="description" rows="3"></textarea>
                     </div>
 
-                    <button type="submit" class="btn btn-primary">Enregistrer</button>
-                    <button type="button" class="btn btn-secondary" onclick="resetForm()">Annuler</button>
+                    <div class="form-group">
+                        <label for="image">Image de la catégorie</label>
+                        <input type="file" id="image" name="image" accept="image/jpeg,image/jpg,image/png,image/webp">
+                        <small class="form-help">Formats acceptés : JPG, PNG, WEBP (max 5MB)</small>
+                        <div id="image-preview" class="image-preview-container">
+                            <img id="preview-img" src="" alt="Aperçu" class="image-preview">
+                        </div>
+                        <div id="current-image" class="current-image-container"></div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
+                        <button type="button" class="btn btn-secondary" onclick="resetForm()">❌ Annuler</button>
+                    </div>
                 </form>
             </div>
 
@@ -109,6 +202,7 @@ $categories = $stmt->fetchAll();
                     <table class="admin-table">
                         <thead>
                             <tr>
+                                <th>Image</th>
                                 <th>Nom</th>
                                 <th>Slug</th>
                                 <th>Produits</th>
@@ -119,23 +213,39 @@ $categories = $stmt->fetchAll();
                             <?php if (count($categories) > 0): ?>
                                 <?php foreach ($categories as $category): ?>
                                     <tr>
-                                        <td><?php echo clean($category['name']); ?></td>
-                                        <td><?php echo clean($category['slug']); ?></td>
-                                        <td><?php echo $category['product_count']; ?></td>
                                         <td>
-                                            <button onclick="editCategory(<?php echo $category['id']; ?>, '<?php echo addslashes($category['name']); ?>', '<?php echo addslashes($category['description']); ?>')" 
-                                                    class="btn btn-sm btn-primary">Modifier</button>
-                                            <form method="POST" style="display: inline;" onsubmit="return confirm('Êtes-vous sûr ? Cette action supprimera tous les produits de cette catégorie.');">
-                                                <input type="hidden" name="action" value="delete">
-                                                <input type="hidden" name="category_id" value="<?php echo $category['id']; ?>">
-                                                <button type="submit" class="btn btn-sm btn-danger">Supprimer</button>
-                                            </form>
+                                            <?php if (!empty($category['image'])): ?>
+                                                <img src="../<?php echo clean($category['image']); ?>" alt="<?php echo clean($category['name']); ?>" class="table-image">
+                                            <?php else: ?>
+                                                <span class="table-image-placeholder">Aucune image</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><strong><?php echo clean($category['name']); ?></strong></td>
+                                        <td><code><?php echo clean($category['slug']); ?></code></td>
+                                        <td>
+                                            <span class="badge badge-info"><?php echo $category['product_count']; ?> produit(s)</span>
+                                        </td>
+                                        <td>
+                                            <div class="admin-actions">
+                                                <button onclick="editCategory(<?php echo $category['id']; ?>, '<?php echo addslashes($category['name']); ?>', '<?php echo addslashes($category['description'] ?? ''); ?>', '<?php echo addslashes($category['image'] ?? ''); ?>')" 
+                                                        class="btn btn-sm btn-primary">✏️ Modifier</button>
+                                                <form method="POST" class="inline-form" onsubmit="return confirm('Êtes-vous sûr ? Cette action supprimera tous les produits de cette catégorie.');">
+                                                    <input type="hidden" name="action" value="delete">
+                                                    <input type="hidden" name="category_id" value="<?php echo $category['id']; ?>">
+                                                    <button type="submit" class="btn btn-sm btn-danger">🗑️ Supprimer</button>
+                                                </form>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="4">Aucune catégorie</td>
+                                    <td colspan="5" class="empty-state">
+                                        <div class="empty-state-content">
+                                            <span class="empty-icon">📁</span>
+                                            <p>Aucune catégorie enregistrée</p>
+                                        </div>
+                                    </td>
                                 </tr>
                             <?php endif; ?>
                         </tbody>
@@ -147,12 +257,25 @@ $categories = $stmt->fetchAll();
 
     <script src="../assets/js/main.js"></script>
     <script>
-        function editCategory(id, name, description) {
+        function editCategory(id, name, description, image) {
             document.getElementById('form-title').textContent = 'Modifier la catégorie';
             document.getElementById('form-action').value = 'edit';
             document.getElementById('form-category-id').value = id;
             document.getElementById('name').value = name;
             document.getElementById('description').value = description;
+            
+            // Afficher l'image actuelle si elle existe
+            const currentImageDiv = document.getElementById('current-image');
+            const imagePreview = document.getElementById('image-preview');
+            if (image && image.trim() !== '') {
+                currentImageDiv.innerHTML = '<p class="current-image-label"><strong>Image actuelle :</strong></p><img src="../' + image + '" alt="Image actuelle" class="current-image-preview">';
+                imagePreview.style.display = 'none';
+            } else {
+                currentImageDiv.innerHTML = '';
+            }
+            
+            // Réinitialiser le champ file
+            document.getElementById('image').value = '';
             document.getElementById('category-form').scrollIntoView({ behavior: 'smooth' });
         }
 
@@ -162,7 +285,30 @@ $categories = $stmt->fetchAll();
             document.getElementById('form-category-id').value = '0';
             document.getElementById('name').value = '';
             document.getElementById('description').value = '';
+            document.getElementById('image').value = '';
+            document.getElementById('image-preview').style.display = 'none';
+            document.getElementById('current-image').innerHTML = '';
         }
+
+        // Aperçu de l'image avant upload
+        document.getElementById('image').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            const preview = document.getElementById('image-preview');
+            const previewImg = document.getElementById('preview-img');
+            const currentImage = document.getElementById('current-image');
+            
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewImg.src = e.target.result;
+                    preview.style.display = 'block';
+                    currentImage.innerHTML = '';
+                };
+                reader.readAsDataURL(file);
+            } else {
+                preview.style.display = 'none';
+            }
+        });
     </script>
 </body>
 </html>

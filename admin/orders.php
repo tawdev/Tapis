@@ -60,18 +60,36 @@ $orders = $stmt->fetchAll();
 
     <main class="admin-main">
         <div class="admin-container">
-            <h1>Gestion des Commandes</h1>
+            <div class="admin-page-header">
+                <div>
+                    <h1>Gestion des Commandes</h1>
+                    <p style="color: var(--text-light); margin-top: 0.5rem; font-size: 0.95rem;">
+                        <?php echo $total; ?> commande<?php echo $total > 1 ? 's' : ''; ?> au total
+                    </p>
+                </div>
+            </div>
 
             <!-- Filtres -->
             <div class="admin-filters">
-                <a href="orders.php" class="filter-btn <?php echo !$statusFilter ? 'active' : ''; ?>">Toutes</a>
-                <a href="orders.php?status=pending" class="filter-btn <?php echo $statusFilter === 'pending' ? 'active' : ''; ?>">En attente</a>
-                <a href="orders.php?status=processing" class="filter-btn <?php echo $statusFilter === 'processing' ? 'active' : ''; ?>">En traitement</a>
-                <a href="orders.php?status=shipped" class="filter-btn <?php echo $statusFilter === 'shipped' ? 'active' : ''; ?>">Expédiées</a>
-                <a href="orders.php?status=delivered" class="filter-btn <?php echo $statusFilter === 'delivered' ? 'active' : ''; ?>">Livrées</a>
+                <a href="orders.php" class="filter-btn <?php echo !$statusFilter ? 'active' : ''; ?>">
+                    <span>📋</span> Toutes
+                </a>
+                <a href="orders.php?status=pending" class="filter-btn <?php echo $statusFilter === 'pending' ? 'active' : ''; ?>">
+                    <span>⏳</span> En attente
+                </a>
+                <a href="orders.php?status=processing" class="filter-btn <?php echo $statusFilter === 'processing' ? 'active' : ''; ?>">
+                    <span>⚙️</span> En traitement
+                </a>
+                <a href="orders.php?status=shipped" class="filter-btn <?php echo $statusFilter === 'shipped' ? 'active' : ''; ?>">
+                    <span>🚚</span> Expédiées
+                </a>
+                <a href="orders.php?status=delivered" class="filter-btn <?php echo $statusFilter === 'delivered' ? 'active' : ''; ?>">
+                    <span>✅</span> Livrées
+                </a>
             </div>
 
-            <div class="table-wrapper">
+            <div class="admin-table-container">
+                <div class="table-wrapper">
                 <table class="admin-table">
                     <thead>
                         <tr>
@@ -88,37 +106,68 @@ $orders = $stmt->fetchAll();
                         <?php if (count($orders) > 0): ?>
                             <?php foreach ($orders as $order): ?>
                                 <tr>
-                                    <td><?php echo clean($order['order_number']); ?></td>
-                                    <td><?php echo clean($order['customer_name']); ?></td>
-                                    <td><?php echo clean($order['customer_email']); ?></td>
-                                    <td><?php echo formatPrice($order['total_amount']); ?></td>
+                                    <td>
+                                        <strong style="color: var(--primary-color); font-family: monospace;">
+                                            <?php echo clean($order['order_number']); ?>
+                                        </strong>
+                                    </td>
+                                    <td>
+                                        <strong><?php echo clean($order['customer_name']); ?></strong>
+                                        <br>
+                                        <small style="color: var(--text-light);"><?php echo clean($order['customer_city']); ?></small>
+                                    </td>
+                                    <td>
+                                        <a href="mailto:<?php echo clean($order['customer_email']); ?>" style="color: var(--primary-color); text-decoration: none;">
+                                            <?php echo clean($order['customer_email']); ?>
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <strong style="color: var(--primary-color); font-size: 1.1rem;">
+                                            <?php echo formatPrice($order['total_amount']); ?>
+                                        </strong>
+                                    </td>
                                     <td>
                                         <span class="status-badge status-<?php echo $order['status']; ?>">
                                             <?php
                                             $statusLabels = [
-                                                'pending' => 'En attente',
-                                                'processing' => 'En traitement',
-                                                'shipped' => 'Expédiée',
-                                                'delivered' => 'Livrée',
-                                                'cancelled' => 'Annulée'
+                                                'pending' => '⏳ En attente',
+                                                'processing' => '⚙️ En traitement',
+                                                'shipped' => '🚚 Expédiée',
+                                                'delivered' => '✅ Livrée',
+                                                'cancelled' => '❌ Annulée'
                                             ];
                                             echo $statusLabels[$order['status']] ?? $order['status'];
                                             ?>
                                         </span>
                                     </td>
-                                    <td><?php echo date('d/m/Y H:i', strtotime($order['created_at'])); ?></td>
                                     <td>
-                                        <a href="order.php?id=<?php echo $order['id']; ?>" class="btn btn-sm btn-primary">Voir</a>
+                                        <div style="display: flex; flex-direction: column;">
+                                            <span><?php echo date('d/m/Y', strtotime($order['created_at'])); ?></span>
+                                            <small style="color: var(--text-light);"><?php echo date('H:i', strtotime($order['created_at'])); ?></small>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <a href="order.php?id=<?php echo $order['id']; ?>" class="btn btn-sm btn-primary">
+                                            👁️ Voir
+                                        </a>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
-                                <td colspan="7">Aucune commande</td>
+                                <td colspan="7" style="text-align: center; padding: 3rem;">
+                                    <div style="color: var(--text-light); font-size: 1.1rem;">
+                                        <p style="margin: 0;">📦 Aucune commande trouvée</p>
+                                        <p style="margin-top: 0.5rem; font-size: 0.9rem;">
+                                            <?php echo $statusFilter ? 'Aucune commande avec ce statut.' : 'Aucune commande pour le moment.'; ?>
+                                        </p>
+                                    </div>
+                                </td>
                             </tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
+                </div>
             </div>
 
             <?php if ($totalPages > 1): ?>
