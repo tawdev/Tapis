@@ -526,6 +526,18 @@ ksort($availableColors);
                                         }
                                     }
                                     $productColorsJson = htmlspecialchars(json_encode($productColors), ENT_QUOTES, 'UTF-8');
+
+                                    // Dimensions max pour les types sur mesure (size stocké comme "LxH" en cm)
+                                    $maxWidthCm = '';
+                                    $maxHeightCm = '';
+                                    if (!empty($product['type_name'])) {
+                                        $typeNameLower = strtolower(trim($product['type_name']));
+                                        if (($typeNameLower === 'sur_mesure' || $typeNameLower === 'sur mesure') && !empty($product['size']) && strpos($product['size'], 'x') !== false) {
+                                            $parts = explode('x', strtolower($product['size']));
+                                            $maxWidthCm = isset($parts[0]) ? trim($parts[0]) : '';
+                                            $maxHeightCm = isset($parts[1]) ? trim($parts[1]) : '';
+                                        }
+                                    }
                                     ?>
                                     <button class="btn-add-cart" 
                                             type="button"
@@ -533,6 +545,8 @@ ksort($availableColors);
                                             data-type-category="<?php echo !empty($product['type_name']) ? strtolower(trim($product['type_name'])) : ''; ?>"
                                             data-unit-price="<?php echo $product['unit_price']; ?>"
                                             data-product-colors="<?php echo $productColorsJson; ?>"
+                                            data-max-width="<?php echo htmlspecialchars($maxWidthCm, ENT_QUOTES, 'UTF-8'); ?>"
+                                            data-max-height="<?php echo htmlspecialchars($maxHeightCm, ENT_QUOTES, 'UTF-8'); ?>"
                                             onclick="window.handleAddToCartClickFromList(event, this)">
                                         Ajouter au panier
                                     </button>
@@ -561,6 +575,10 @@ ksort($availableColors);
             <div class="modal-body">
                 <p style="margin-bottom: 1.5rem; color: var(--text-light);">
                     Veuillez entrer les dimensions de votre tapis pour calculer le prix exact.
+                    <br>
+                    <span id="modal-max-dimensions-info" style="font-size: 0.9rem; color: var(--text-light); display: none;">
+                        <!-- Rempli dynamiquement pour les produits sur mesure -->
+                    </span>
                 </p>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
                     <div class="dimension-input">
@@ -620,6 +638,9 @@ ksort($availableColors);
         window.currentProductId = null;
         window.currentUnitPrice = null;
         window.currentProductColors = [];
+        window.currentMaxWidthCm = null;
+        window.currentMaxHeightCm = null;
+        window.currentIsSurMesure = false;
         
         // Fonction pour sélectionner une couleur dans la modal
         window.selectModalColor = function(element, colorName) {
@@ -639,7 +660,7 @@ ksort($availableColors);
         };
         
         // Fonctions du modal (globales)
-        window.openDimensionsModal = function(productId, unitPrice, productColors) {
+        window.openDimensionsModal = function(productId, unitPrice, productColors, maxWidthCm, maxHeightCm, isSurMesure) {
             const modal = document.getElementById('dimensions-modal');
             if (!modal) {
                 console.error('Modal dimensions-modal introuvable!');
@@ -651,11 +672,32 @@ ksort($availableColors);
             window.currentProductId = productId;
             window.currentUnitPrice = unitPrice;
             window.currentProductColors = productColors || [];
+            window.currentMaxWidthCm = maxWidthCm ? parseFloat(maxWidthCm) : null;
+            window.currentMaxHeightCm = maxHeightCm ? parseFloat(maxHeightCm) : null;
+            window.currentIsSurMesure = !!isSurMesure;
             
             // Mettre à jour le prix unitaire affiché
             const unitPriceElement = document.getElementById('modal-unit-price');
             if (unitPriceElement) {
                 unitPriceElement.textContent = formatPrice(unitPrice) + ' / m²';
+            }
+
+            // Mettre à jour le texte des dimensions max pour les produits sur mesure
+            const maxInfo = document.getElementById('modal-max-dimensions-info');
+            if (maxInfo) {
+                if (window.currentIsSurMesure && (window.currentMaxWidthCm || window.currentMaxHeightCm)) {
+                    const parts = [];
+                    if (window.currentMaxWidthCm) parts.push(window.currentMaxWidthCm + ' cm');
+                    if (window.currentMaxHeightCm) parts.push(window.currentMaxHeightCm + ' cm');
+                    maxInfo.textContent = 'Dimensions maximales pour ce modèle : ' +
+                        (window.currentMaxWidthCm && window.currentMaxHeightCm
+                            ? window.currentMaxWidthCm + ' cm × ' + window.currentMaxHeightCm + ' cm'
+                            : parts.join(' × '));
+                    maxInfo.style.display = 'inline';
+                } else {
+                    maxInfo.textContent = '';
+                    maxInfo.style.display = 'none';
+                }
             }
             
             // Gérer l'affichage du sélecteur de couleur
@@ -743,6 +785,25 @@ ksort($availableColors);
             const confirmBtn = document.getElementById('confirm-add-to-cart');
             
             if (length > 0 && width > 0 && window.currentUnitPrice) {
+                // Pour les produits sur mesure, vérifier que les dimensions ne dépassent pas les max
+                if (window.currentIsSurMesure && (window.currentMaxWidthCm || window.currentMaxHeightCm)) {
+                    if (window.currentMaxWidthCm && length > window.currentMaxWidthCm) {
+                        if (typeof showNotification === 'function') {
+                            showNotification('La longueur maximale pour ce modèle est de ' + window.currentMaxWidthCm + ' cm.', 'error');
+                        } else {
+                            alert('La longueur maximale pour ce modèle est de ' + window.currentMaxWidthCm + ' cm.');
+                        }
+                        return;
+                    }
+                    if (window.currentMaxHeightCm && width > window.currentMaxHeightCm) {
+                        if (typeof showNotification === 'function') {
+                            showNotification('La largeur maximale pour ce modèle est de ' + window.currentMaxHeightCm + ' cm.', 'error');
+                        } else {
+                            alert('La largeur maximale pour ce modèle est de ' + window.currentMaxHeightCm + ' cm.');
+                        }
+                        return;
+                    }
+                }
                 // Convertir cm² en m² (1 m² = 10 000 cm²)
                 const surfaceCm2 = length * width;
                 const surfaceM2 = surfaceCm2 / 10000;
@@ -779,6 +840,8 @@ ksort($availableColors);
             const typeCategory = button.getAttribute('data-type-category') || '';
             const unitPrice = parseFloat(button.getAttribute('data-unit-price')) || 0;
             const productColorsJson = button.getAttribute('data-product-colors') || '[]';
+            const maxWidthCm = button.getAttribute('data-max-width') || '';
+            const maxHeightCm = button.getAttribute('data-max-height') || '';
             
             let productColors = [];
             try {
@@ -792,11 +855,13 @@ ksort($availableColors);
             console.log('typeCategory:', typeCategory);
             console.log('unitPrice:', unitPrice);
             console.log('productColors:', productColors);
+            console.log('maxWidthCm:', maxWidthCm, 'maxHeightCm:', maxHeightCm);
             
             // Vérifier les types sans dimensions : authentique / fixe
             const lowerType = typeCategory.toLowerCase();
             const isAuthentique = lowerType === 'authentique' || lowerType === 'authentic';
             const isFixe = lowerType === 'fixe' || lowerType === 'fix';
+            const isSurMesure = lowerType === 'sur_mesure' || lowerType === 'sur mesure';
             
             if (isAuthentique || isFixe) {
                 console.log('→ Ajout direct (type sans dimensions)');
@@ -805,7 +870,7 @@ ksort($availableColors);
             } else {
                 console.log('→ Ouverture du modal');
                 // Ouvrir le modal pour les dimensions
-                window.openDimensionsModal(productId, unitPrice, productColors);
+                window.openDimensionsModal(productId, unitPrice, productColors, maxWidthCm, maxHeightCm, isSurMesure);
             }
             return false;
         };
@@ -878,6 +943,26 @@ ksort($availableColors);
                             alert('Veuillez entrer des dimensions valides');
                         }
                         return;
+                    }
+
+                    // Vérifier les dimensions max pour les produits sur mesure
+                    if (window.currentIsSurMesure && (window.currentMaxWidthCm || window.currentMaxHeightCm)) {
+                        if (window.currentMaxWidthCm && length > window.currentMaxWidthCm) {
+                            if (typeof showNotification === 'function') {
+                                showNotification('La longueur maximale pour ce modèle est de ' + window.currentMaxWidthCm + ' cm.', 'error');
+                            } else {
+                                alert('La longueur maximale pour ce modèle est de ' + window.currentMaxWidthCm + ' cm.');
+                            }
+                            return;
+                        }
+                        if (window.currentMaxHeightCm && width > window.currentMaxHeightCm) {
+                            if (typeof showNotification === 'function') {
+                                showNotification('La largeur maximale pour ce modèle est de ' + window.currentMaxHeightCm + ' cm.', 'error');
+                            } else {
+                                alert('La largeur maximale pour ce modèle est de ' + window.currentMaxHeightCm + ' cm.');
+                            }
+                            return;
+                        }
                     }
                     
                     if (!productId || !unitPrice) {

@@ -20,12 +20,25 @@ $stmt = $db->prepare("SELECT p.*, c.name as category_name, c.slug as category_sl
 $stmt->execute([':id' => $productId]);
 $product = $stmt->fetch();
 
-// Vérifier si le type est "authentique" ou "fixe" (insensible à la casse)
+// Vérifier le type pour adapter l'affichage des dimensions
 $showDimensionsCalculator = true;
+$isSurMesure = false;
+// Dimensions max en cm pour les produits sur mesure (dérivées de size, ex: "200x300")
+$maxWidthCm = null;
+$maxHeightCm = null;
 if (!empty($product['type_name'])) {
     $typeName = strtolower(trim($product['type_name']));
     if ($typeName === 'authentique' || $typeName === 'authentic' || $typeName === 'fixe' || $typeName === 'fix') {
+        // Ces types n'ont PAS de calculateur de dimensions
         $showDimensionsCalculator = false;
+    } elseif ($typeName === 'sur_mesure' || $typeName === 'sur mesure') {
+        // Type sur mesure : on garde le calculateur et on traitera la taille comme dimensions max
+        $isSurMesure = true;
+        if (!empty($product['size']) && strpos($product['size'], 'x') !== false) {
+            $parts = explode('x', strtolower($product['size']));
+            $maxWidthCm = isset($parts[0]) ? (float)trim($parts[0]) : null;
+            $maxHeightCm = isset($parts[1]) ? (float)trim($parts[1]) : null;
+        }
     }
 }
 
@@ -245,7 +258,12 @@ if (count($relatedProducts) < 4 && !empty($product['category_id'])) {
                         <?php endif; ?>
                         <?php if ($product['size']): ?>
                             <div class="spec-item">
-                                <strong>Taille:</strong> <?php echo clean($product['size']); ?>
+                                <?php if ($isSurMesure && $maxWidthCm && $maxHeightCm): ?>
+                                    <strong>Dimensions max :</strong>
+                                    <?php echo clean($maxWidthCm); ?> cm × <?php echo clean($maxHeightCm); ?> cm
+                                <?php else: ?>
+                                    <strong>Taille:</strong> <?php echo clean($product['size']); ?>
+                                <?php endif; ?>
                             </div>
                         <?php endif; ?>
                         <?php if (!empty($colorsData)): ?>
@@ -370,6 +388,13 @@ if (count($relatedProducts) < 4 && !empty($product['category_id'])) {
             <div class="modal-body">
                 <p style="margin-bottom: 1.5rem; color: var(--text-light);">
                     Veuillez entrer les dimensions de votre tapis pour calculer le prix exact.
+                    <?php if ($isSurMesure && $maxWidthCm && $maxHeightCm): ?>
+                        <br>
+                        <span style="font-size: 0.9rem; color: var(--text-light);">
+                            Dimensions maximales pour ce modèle : 
+                            <strong><?php echo clean($maxWidthCm); ?> cm × <?php echo clean($maxHeightCm); ?> cm</strong>
+                        </span>
+                    <?php endif; ?>
                 </p>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
                     <div class="dimension-input">
@@ -429,11 +454,15 @@ if (count($relatedProducts) < 4 && !empty($product['category_id'])) {
         window.unitPrice = <?php echo $unitPrice; ?>;
         window.isAuthentique = <?php echo $showDimensionsCalculator ? 'false' : 'true'; ?>;
         window.isFixe = <?php echo (!empty($product['type_name']) && in_array(strtolower(trim($product['type_name'])), ['fixe', 'fix'])) ? 'true' : 'false'; ?>;
+        window.isSurMesure = <?php echo $isSurMesure ? 'true' : 'false'; ?>;
+        window.maxWidthCm = <?php echo $maxWidthCm ? (float)$maxWidthCm : 'null'; ?>;
+        window.maxHeightCm = <?php echo $maxHeightCm ? (float)$maxHeightCm : 'null'; ?>;
         window.currentProductId = <?php echo $product['id']; ?>;
         
         console.log('Variables initialisées:');
         console.log('- unitPrice:', window.unitPrice);
         console.log('- isAuthentique:', window.isAuthentique, '(type:', typeof window.isAuthentique, ')');
+        console.log('- isSurMesure:', window.isSurMesure, 'maxWidthCm:', window.maxWidthCm, 'maxHeightCm:', window.maxHeightCm);
         console.log('- currentProductId:', window.currentProductId);
         
         // Fonctions du modal (globales)
@@ -481,6 +510,17 @@ if (count($relatedProducts) < 4 && !empty($product['category_id'])) {
             const confirmBtn = document.getElementById('confirm-add-to-cart');
             
             if (length > 0 && width > 0) {
+                // Si produit sur mesure, vérifier que les dimensions ne dépassent pas les max
+                if (window.isSurMesure && (window.maxWidthCm || window.maxHeightCm)) {
+                    if (window.maxWidthCm && length > window.maxWidthCm) {
+                        showNotification && showNotification('La longueur maximale pour ce modèle est de ' + window.maxWidthCm + ' cm.', 'error');
+                        return;
+                    }
+                    if (window.maxHeightCm && width > window.maxHeightCm) {
+                        showNotification && showNotification('La largeur maximale pour ce modèle est de ' + window.maxHeightCm + ' cm.', 'error');
+                        return;
+                    }
+                }
                 // Convertir cm² en m² (1 m² = 10 000 cm²)
                 const surfaceCm2 = length * width;
                 const surfaceM2 = surfaceCm2 / 10000;
@@ -606,12 +646,24 @@ if (count($relatedProducts) < 4 && !empty($product['category_id'])) {
                     let calculatedPrice = window.unitPrice;
 
                     const isFixe = (window.isFixe === true || window.isFixe === 'true');
+                    const isSurMesure = (window.isSurMesure === true || window.isSurMesure === 'true');
                     if (!isFixe) {
                         length = parseFloat(document.getElementById('modal-length').value) || 0;
                         width = parseFloat(document.getElementById('modal-width').value) || 0;
                         if (length <= 0 || width <= 0) {
                             showNotification('Veuillez entrer des dimensions valides', 'error');
                             return;
+                        }
+                        // Pour sur mesure, respecter les dimensions max
+                        if (isSurMesure && (window.maxWidthCm || window.maxHeightCm)) {
+                            if (window.maxWidthCm && length > window.maxWidthCm) {
+                                showNotification('La longueur maximale pour ce modèle est de ' + window.maxWidthCm + ' cm.', 'error');
+                                return;
+                            }
+                            if (window.maxHeightCm && width > window.maxHeightCm) {
+                                showNotification('La largeur maximale pour ce modèle est de ' + window.maxHeightCm + ' cm.', 'error');
+                                return;
+                            }
                         }
                         const surfaceM2 = (length * width) / 10000;
                         calculatedPrice = surfaceM2 * window.unitPrice;
