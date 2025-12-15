@@ -11,20 +11,20 @@ if ($productId == 0) {
     redirect('products.php');
 }
 
-// Récupérer le produit avec le type de catégorie
-$stmt = $db->prepare("SELECT p.*, c.name as category_name, c.slug as category_slug, tc.name as type_category_name
+// Récupérer le produit avec le type
+$stmt = $db->prepare("SELECT p.*, c.name as category_name, c.slug as category_slug, t.name as type_name
                       FROM products p 
                       LEFT JOIN categories c ON p.category_id = c.id 
-                      LEFT JOIN types_categories tc ON p.type_category_id = tc.id
+                      LEFT JOIN types t ON p.type_id = t.id
                       WHERE p.id = :id AND p.status = 'active'");
 $stmt->execute([':id' => $productId]);
 $product = $stmt->fetch();
 
-// Vérifier si le type de catégorie est "authentique" (insensible à la casse)
+// Vérifier si le type est "authentique" ou "fixe" (insensible à la casse)
 $showDimensionsCalculator = true;
-if (!empty($product['type_category_name'])) {
-    $typeCategoryName = strtolower(trim($product['type_category_name']));
-    if ($typeCategoryName === 'authentique' || $typeCategoryName === 'authentic') {
+if (!empty($product['type_name'])) {
+    $typeName = strtolower(trim($product['type_name']));
+    if ($typeName === 'authentique' || $typeName === 'authentic' || $typeName === 'fixe' || $typeName === 'fix') {
         $showDimensionsCalculator = false;
     }
 }
@@ -55,23 +55,23 @@ if (!empty($product['color'])) {
 }
 
 // Récupérer les produits similaires
-// Priorité 1: Produits avec le même type_category_id si le produit actuel en a un
+// Priorité 1: Produits avec le même type_id si le produit actuel en a un
 // Priorité 2: Produits avec le même category_id
 $relatedProducts = [];
 
-if (!empty($product['type_category_id'])) {
-    // Le produit a un type_category_id, chercher les produits avec le même type_category_id
+if (!empty($product['type_id'])) {
+    // Le produit a un type_id, chercher les produits avec le même type_id
     $stmt = $db->prepare("SELECT p.*, 
                           (SELECT image_path FROM product_images WHERE product_id = p.id AND is_primary = 1 LIMIT 1) as image
                           FROM products p 
-                          WHERE p.type_category_id = :type_category_id AND p.id != :id AND p.status = 'active'
+                          WHERE p.type_id = :type_id AND p.id != :id AND p.status = 'active'
                           ORDER BY RAND()
                           LIMIT 4");
-    $stmt->execute([':type_category_id' => $product['type_category_id'], ':id' => $productId]);
+    $stmt->execute([':type_id' => $product['type_id'], ':id' => $productId]);
     $relatedProducts = $stmt->fetchAll();
 }
 
-// Si pas assez de produits (ou pas de type_category_id), compléter/remplacer avec des produits de la même catégorie
+// Si pas assez de produits (ou pas de type_id), compléter/remplacer avec des produits de la même catégorie
 if (count($relatedProducts) < 4 && !empty($product['category_id'])) {
     $needed = 4 - count($relatedProducts);
     $excludeIds = [$productId];
@@ -313,7 +313,7 @@ if (count($relatedProducts) < 4 && !empty($product['category_id'])) {
                                 id="add-to-cart-btn" 
                                 type="button"
                                 data-product-id="<?php echo $product['id']; ?>"
-                                data-type-category="<?php echo !empty($product['type_category_name']) ? strtolower(trim($product['type_category_name'])) : ''; ?>"
+                                data-type-category="<?php echo !empty($product['type_name']) ? strtolower(trim($product['type_name'])) : ''; ?>"
                                 data-custom-handler="true"
                                 onclick="handleAddToCartClick(event)"
                                 <?php echo $product['stock'] == 0 ? 'disabled' : ''; ?>>
@@ -428,6 +428,7 @@ if (count($relatedProducts) < 4 && !empty($product['category_id'])) {
         // Variables globales pour être accessibles partout
         window.unitPrice = <?php echo $unitPrice; ?>;
         window.isAuthentique = <?php echo $showDimensionsCalculator ? 'false' : 'true'; ?>;
+        window.isFixe = <?php echo (!empty($product['type_name']) && in_array(strtolower(trim($product['type_name'])), ['fixe', 'fix'])) ? 'true' : 'false'; ?>;
         window.currentProductId = <?php echo $product['id']; ?>;
         
         console.log('Variables initialisées:');
@@ -437,6 +438,10 @@ if (count($relatedProducts) < 4 && !empty($product['category_id'])) {
         
         // Fonctions du modal (globales)
         window.openDimensionsModal = function() {
+            if (window.isFixe === true || window.isFixe === 'true') {
+                console.log('Type fixe: pas de modal de dimensions');
+                return;
+            }
             const modal = document.getElementById('dimensions-modal');
             if (!modal) {
                 console.error('Modal dimensions-modal introuvable!');
@@ -591,20 +596,26 @@ if (count($relatedProducts) < 4 && !empty($product['category_id'])) {
             const confirmBtn = document.getElementById('confirm-add-to-cart');
             if (confirmBtn) {
                 confirmBtn.addEventListener('click', function() {
-                    const length = parseFloat(document.getElementById('modal-length').value) || 0;
-                    const width = parseFloat(document.getElementById('modal-width').value) || 0;
                     const quantityInput = document.getElementById('product-quantity');
                     const quantity = quantityInput ? parseInt(quantityInput.value) : 1;
                     const productId = window.currentProductId;
-                    
-                    if (length <= 0 || width <= 0) {
-                        showNotification('Veuillez entrer des dimensions valides', 'error');
-                        return;
+
+                    // Si type fixe, pas de dimensions requises
+                    let length = 0;
+                    let width = 0;
+                    let calculatedPrice = window.unitPrice;
+
+                    const isFixe = (window.isFixe === true || window.isFixe === 'true');
+                    if (!isFixe) {
+                        length = parseFloat(document.getElementById('modal-length').value) || 0;
+                        width = parseFloat(document.getElementById('modal-width').value) || 0;
+                        if (length <= 0 || width <= 0) {
+                            showNotification('Veuillez entrer des dimensions valides', 'error');
+                            return;
+                        }
+                        const surfaceM2 = (length * width) / 10000;
+                        calculatedPrice = surfaceM2 * window.unitPrice;
                     }
-                    
-                    // Calculer le prix
-                    const surfaceM2 = (length * width) / 10000;
-                    const calculatedPrice = surfaceM2 * window.unitPrice;
                     
                     const btn = this;
                     btn.disabled = true;

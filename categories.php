@@ -5,9 +5,10 @@ require_once 'config/functions.php';
 
 $db = getDB();
 
-// Récupérer toutes les catégories avec le nombre de produits
-$stmt = $db->query("SELECT c.*, COUNT(p.id) as product_count 
+// Récupérer toutes les catégories avec le nombre de produits et le type associé
+$stmt = $db->query("SELECT c.*, t.name AS type_name, COUNT(p.id) as product_count 
                     FROM categories c 
+                    LEFT JOIN types t ON c.type_id = t.id
                     LEFT JOIN products p ON c.id = p.category_id AND p.status = 'active'
                     GROUP BY c.id 
                     ORDER BY c.name");
@@ -20,6 +21,43 @@ $categories = $stmt->fetchAll();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Catégories - <?php echo SITE_NAME; ?></title>
     <link rel="stylesheet" href="assets/css/style.css">
+    <style>
+        /* 4 colonnes pour la grille des catégories sur desktop */
+        .categories-grid-detailed {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 1.75rem;
+        }
+
+        /* Si la dernière ligne contient exactement 2 cartes,
+           les placer au centre (colonnes 2 et 3) comme dans ton exemple */
+        @media (min-width: 1025px) {
+            .categories-grid-detailed > .category-card-detailed:nth-last-child(2):nth-child(4n + 1) {
+                grid-column: 2;
+            }
+            .categories-grid-detailed > .category-card-detailed:nth-last-child(1):nth-child(4n + 2) {
+                grid-column: 3;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .categories-grid-detailed {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 768px) {
+            .categories-grid-detailed {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 480px) {
+            .categories-grid-detailed {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
 <body>
     <?php include 'includes/header.php'; ?>
@@ -50,6 +88,11 @@ $categories = $stmt->fetchAll();
                                 </div>
                                 <div class="category-content">
                                     <h2><?php echo clean($category['name']); ?></h2>
+                                    <?php if (!empty($category['type_name'])): ?>
+                                        <p style="margin: 0.15rem 0 0.35rem; font-size: 0.9rem; color: var(--text-light);">
+                                            Type : <strong style="color: var(--primary-color);"><?php echo clean($category['type_name']); ?></strong>
+                                        </p>
+                                    <?php endif; ?>
                                     <?php if ($category['description']): ?>
                                         <p><?php echo clean($category['description']); ?></p>
                                     <?php endif; ?>

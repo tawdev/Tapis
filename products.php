@@ -7,11 +7,12 @@ $db = getDB();
 
 // Paramètres de filtrage
 $categoryId = isset($_GET['category']) ? (int)$_GET['category'] : 0;
-$typeCategoryId = isset($_GET['type_category']) ? (int)$_GET['type_category'] : 0;
+$typeId = isset($_GET['type']) ? (int)$_GET['type'] : 0;
 $minPrice = isset($_GET['min_price']) ? (float)$_GET['min_price'] : 0;
 $maxPrice = isset($_GET['max_price']) ? (float)$_GET['max_price'] : 0;
 $sort = isset($_GET['sort']) ? clean($_GET['sort']) : 'newest';
 $search = isset($_GET['search']) ? clean($_GET['search']) : '';
+$colorFilter = isset($_GET['color']) ? trim(clean($_GET['color'])) : '';
 
 // Construction de la requête
 $where = ["p.status = 'active'"];
@@ -22,9 +23,9 @@ if ($categoryId > 0) {
     $params[':category_id'] = $categoryId;
 }
 
-if ($typeCategoryId > 0) {
-    $where[] = "p.type_category_id = :type_category_id";
-    $params[':type_category_id'] = $typeCategoryId;
+if ($typeId > 0) {
+    $where[] = "p.type_id = :type_id";
+    $params[':type_id'] = $typeId;
 }
 
 if ($minPrice > 0) {
@@ -41,6 +42,12 @@ if ($search) {
     $where[] = "(p.name LIKE :search_name OR p.description LIKE :search_desc)";
     $params[':search_name'] = "%$search%";
     $params[':search_desc'] = "%$search%";
+}
+
+// Filtre par couleur (cherche le nom de couleur dans le champ color, JSON ou texte simple)
+if ($colorFilter !== '') {
+    $where[] = "LOWER(p.color) LIKE :color_filter";
+    $params[':color_filter'] = '%' . strtolower($colorFilter) . '%';
 }
 
 $whereClause = implode(' AND ', $where);
@@ -70,12 +77,12 @@ $stmt->execute($params);
 $total = $stmt->fetch()['total'];
 
 // Récupérer tous les produits avec prix unitaire calculé
-$sql = "SELECT p.*, c.name as category_name, tc.name as type_category_name,
+$sql = "SELECT p.*, c.name as category_name, t.name as type_name,
         (SELECT image_path FROM product_images WHERE product_id = p.id AND is_primary = 1 LIMIT 1) as image,
         COALESCE(p.sale_price, p.price) as unit_price
         FROM products p 
         LEFT JOIN categories c ON p.category_id = c.id 
-        LEFT JOIN types_categories tc ON p.type_category_id = tc.id 
+        LEFT JOIN types t ON p.type_id = t.id 
         WHERE $whereClause 
         ORDER BY $orderBy";
 
@@ -86,17 +93,46 @@ foreach ($params as $key => $value) {
 $stmt->execute();
 $products = $stmt->fetchAll();
 
-// Récupérer les catégories
-$stmt = $db->query("SELECT * FROM categories ORDER BY name");
-$categories = $stmt->fetchAll();
+// Récupérer tous les types
+$stmt = $db->query("SELECT * FROM types ORDER BY name");
+$types = $stmt->fetchAll();
 
-// Récupérer les types de catégories selon la catégorie sélectionnée
-$typesCategories = [];
-if ($categoryId > 0) {
-    $stmt = $db->prepare("SELECT * FROM types_categories WHERE category_id = :category_id ORDER BY name");
-    $stmt->execute([':category_id' => $categoryId]);
-    $typesCategories = $stmt->fetchAll();
+// Récupérer les catégories (filtrées par type si sélectionné)
+if ($typeId > 0) {
+    $stmt = $db->prepare("SELECT * FROM categories WHERE type_id = :type_id ORDER BY name");
+    $stmt->execute([':type_id' => $typeId]);
+    $categories = $stmt->fetchAll();
+} else {
+    $stmt = $db->query("SELECT * FROM categories ORDER BY name");
+    $categories = $stmt->fetchAll();
 }
+
+// Récupérer toutes les couleurs disponibles (à partir de tous les produits)
+$availableColors = [];
+$stmt = $db->query("SELECT color FROM products WHERE color IS NOT NULL AND color <> ''");
+while ($row = $stmt->fetch()) {
+    $rawColor = trim($row['color']);
+    if ($rawColor === '') continue;
+
+    $decoded = json_decode($rawColor, true);
+    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+        foreach ($decoded as $c) {
+            if (!empty($c['name'])) {
+                $name = trim($c['name']);
+                if ($name !== '') {
+                    $key = mb_strtolower($name, 'UTF-8');
+                    $availableColors[$key] = $name;
+                }
+            }
+        }
+    } else {
+        // Ancien format: texte simple
+        $name = $rawColor;
+        $key = mb_strtolower($name, 'UTF-8');
+        $availableColors[$key] = $name;
+    }
+}
+ksort($availableColors);
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -118,6 +154,145 @@ if ($categoryId > 0) {
             background: linear-gradient(135deg, #8B4513 0%, #2C1810 100%) !important;
             transform: translateY(-2px) !important;
         }
+
+        /* Mise en page de la rangée de filtres */
+        .filters-form-horizontal .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: flex-end;
+        }
+        .filters-form-horizontal .filter-item {
+            flex: 1 1 190px;
+            min-width: 0;
+        }
+        .filters-form-horizontal .filter-actions {
+            flex: 0 0 auto;
+        }
+
+        /* === Select couleur personnalisé (nom + cercle de couleur) === */
+        #color-filter {
+            display: none; /* champ caché, utilisé seulement par le formulaire */
+        }
+
+        .color-select {
+            position: relative;
+            width: 100%;
+            font-family: inherit;
+        }
+
+        .color-select-toggle {
+            width: 100%;
+            padding: 0.55rem 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            border-radius: 8px;
+            border: 2px solid #c28a5b;
+            background: #fff;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .color-select-toggle:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(194,138,91,0.25);
+        }
+
+        .color-select-label {
+            flex: 1;
+            text-align: left;
+        }
+
+        .color-select-caret {
+            font-size: 0.75rem;
+        }
+
+        .color-select-options {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            margin-top: 4px;
+            background: #fff;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            box-shadow: 0 8px 18px rgba(0,0,0,0.12);
+            max-height: 260px;
+            overflow-y: auto;
+            z-index: 20;
+            display: none; /* affichée seulement quand .open est ajouté */
+        }
+
+        .color-select.open .color-select-options {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .color-option {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.35rem 0.6rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            border-radius: 6px;
+            margin: 2px;
+        }
+
+        /* Première ligne "Toutes les couleurs" sur toute la largeur */
+        .color-option-all {
+            grid-column: 1 / -1;
+        }
+
+        .color-option:hover {
+            background: #f5f2ed;
+        }
+
+        .color-option.active {
+            background: #f0e0d1;
+        }
+
+        .color-circle {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 1px solid rgba(0,0,0,0.18);
+            box-shadow:
+                inset 0 0 0 1px rgba(255,255,255,0.7),
+                0 0 3px rgba(0,0,0,0.25);
+        }
+
+        .color-circle.all-colors {
+            background: linear-gradient(135deg,#e53935,#fb8c00,#fdd835,#43a047,#1e88e5,#8e24aa);
+        }
+
+        /* Couleurs de base (adaptées aux noms possibles) */
+        .color-circle-beige { background: #f5f0e6; }
+        .color-circle-blanc,
+        .color-circle-blanch,
+        .color-circle-white { background: #ffffff; }
+        .color-circle-noir,
+        .color-circle-black { background: #111111; }
+        .color-circle-gris,
+        .color-circle-gray,
+        .color-circle-grey { background: #b0b0b0; }
+        .color-circle-rouge,
+        .color-circle-red { background: #e53935; }
+        .color-circle-bleu,
+        .color-circle-blue { background: #1e88e5; }
+        .color-circle-vert,
+        .color-circle-green { background: #43a047; }
+        .color-circle-rose,
+        .color-circle-pink { background: #ec407a; }
+        .color-circle-jaune,
+        .color-circle-yellow { background: #fdd835; }
+        .color-circle-orange { background: #fb8c00; }
+        .color-circle-marron,
+        .color-circle-brown { background: #6d4c41; }
+        .color-circle-turquoise { background: #1abc9c; }
+        .color-circle-violet,
+        .color-circle-purple { background: #8e24aa; }
         @media (max-width: 767px) {
             .types-categories-filter {
                 padding: 1.5rem !important;
@@ -151,7 +326,7 @@ if ($categoryId > 0) {
                         <span><?php echo $total; ?></span> produit<?php echo $total > 1 ? 's' : ''; ?>
                     </div>
                 </div>
-                <?php if ($search || $categoryId > 0 || $typeCategoryId > 0 || $minPrice > 0 || $maxPrice > 0): ?>
+                <?php if ($search || $categoryId > 0 || $typeId > 0 || $minPrice > 0 || $maxPrice > 0 || $colorFilter !== ''): ?>
                     <div class="active-filters">
                         <strong>Filtres actifs :</strong>
                         <?php if ($search): ?>
@@ -169,17 +344,20 @@ if ($categoryId > 0) {
                             ?>
                             <span class="filter-tag">Catégorie: <?php echo clean($catName); ?></span>
                         <?php endif; ?>
-                        <?php if ($typeCategoryId > 0): ?>
+                        <?php if ($typeId > 0): ?>
                             <?php 
-                            $typeCatName = '';
-                            foreach ($typesCategories as $typeCat) {
-                                if ($typeCat['id'] == $typeCategoryId) {
-                                    $typeCatName = $typeCat['name'];
+                            $typeName = '';
+                            foreach ($types as $type) {
+                                if ($type['id'] == $typeId) {
+                                    $typeName = $type['name'];
                                     break;
                                 }
                             }
                             ?>
-                            <span class="filter-tag">Type: <?php echo clean($typeCatName); ?></span>
+                            <span class="filter-tag">Type: <?php echo clean($typeName); ?></span>
+                        <?php endif; ?>
+                        <?php if ($colorFilter !== ''): ?>
+                            <span class="filter-tag">Couleur: <?php echo clean($colorFilter); ?></span>
                         <?php endif; ?>
                         <?php if ($minPrice > 0 || $maxPrice > 0): ?>
                             <span class="filter-tag">Prix: <?php echo $minPrice > 0 ? formatPrice($minPrice) : '0'; ?> - <?php echo $maxPrice > 0 ? formatPrice($maxPrice) : '∞'; ?></span>
@@ -196,6 +374,18 @@ if ($categoryId > 0) {
                         <div class="filter-item">
                             <label>🔍 Recherche</label>
                             <input type="text" name="search" id="search-filter" placeholder="Rechercher..." value="<?php echo $search; ?>">
+                        </div>
+
+                        <div class="filter-item">
+                            <label>🏷️ Type</label>
+                            <select name="type" id="type-filter">
+                                <option value="">Tous les types</option>
+                                <?php foreach ($types as $type): ?>
+                                    <option value="<?php echo $type['id']; ?>" <?php echo $typeId == $type['id'] ? 'selected' : ''; ?>>
+                                        <?php echo clean($type['name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
 
                         <div class="filter-item">
@@ -219,6 +409,56 @@ if ($categoryId > 0) {
                             </div>
                         </div>
 
+                        <div class="filter-item">
+                            <label>🎨 Couleur</label>
+                            <?php
+                            $currentColorValue = trim($colorFilter);
+                            $currentDisplay = 'Toutes les couleurs';
+                            $currentClass = 'all-colors';
+                            if ($currentColorValue !== '') {
+                                $normalizedCurrent = mb_strtolower($currentColorValue, 'UTF-8');
+                                if (isset($availableColors[$normalizedCurrent])) {
+                                    $currentDisplay = mb_convert_case(trim($availableColors[$normalizedCurrent]), MB_CASE_TITLE, 'UTF-8');
+                                    $currentClass = preg_replace('/[^a-z0-9]+/i', '-', $normalizedCurrent);
+                                } else {
+                                    $currentDisplay = mb_convert_case(trim($currentColorValue), MB_CASE_TITLE, 'UTF-8');
+                                    $currentClass = preg_replace('/[^a-z0-9]+/i', '-', $normalizedCurrent);
+                                }
+                            }
+                            ?>
+                            <input type="hidden" name="color" id="color-filter" value="<?php echo htmlspecialchars($currentColorValue, ENT_QUOTES, 'UTF-8'); ?>">
+
+                            <div class="color-select" id="color-select">
+                                <button type="button" class="color-select-toggle" id="color-select-toggle">
+                                    <span class="color-circle <?php echo $currentColorValue === '' ? 'all-colors' : 'color-circle-' . $currentClass; ?>"></span>
+                                    <span class="color-select-label"><?php echo htmlspecialchars($currentDisplay, ENT_QUOTES, 'UTF-8'); ?></span>
+                                    <span class="color-select-caret">▼</span>
+                                </button>
+
+                                <div class="color-select-options" id="color-select-options">
+                                    <div class="color-option color-option-all<?php echo $currentColorValue === '' ? ' active' : ''; ?>"
+                                         data-value=""
+                                         data-class="all-colors">
+                                        <span class="color-circle all-colors"></span>
+                                        <span class="color-option-label">Toutes les couleurs</span>
+                                    </div>
+                                    <?php foreach ($availableColors as $key => $colorName): 
+                                        $normalized = mb_strtolower(trim($colorName), 'UTF-8');
+                                        $classSlug = preg_replace('/[^a-z0-9]+/i', '-', $normalized);
+                                        $displayName = mb_convert_case(trim($colorName), MB_CASE_TITLE, 'UTF-8');
+                                        $isActive = $currentColorValue !== '' && mb_strtolower($currentColorValue, 'UTF-8') === $normalized;
+                                    ?>
+                                        <div class="color-option<?php echo $isActive ? ' active' : ''; ?>"
+                                             data-value="<?php echo htmlspecialchars($colorName, ENT_QUOTES, 'UTF-8'); ?>"
+                                             data-class="<?php echo 'color-circle-' . $classSlug; ?>">
+                                            <span class="color-circle <?php echo 'color-circle-' . $classSlug; ?>"></span>
+                                            <span class="color-option-label"><?php echo htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8'); ?></span>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="filter-actions">
                             <a href="products.php" class="btn btn-secondary">Réinitialiser</a>
                         </div>
@@ -226,28 +466,7 @@ if ($categoryId > 0) {
                 </form>
             </div>
 
-            <!-- Boutons de filtrage par types de catégories -->
-            <?php if ($categoryId > 0 && count($typesCategories) > 0): ?>
-                <div class="types-categories-filter" style="margin: 2rem 0; padding: 2rem; background: linear-gradient(135deg, #FFFFFF 0%, #FAFAFA 100%); border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-top: 4px solid #8B4513; border-left: 4px solid #8B4513; display: block; width: 100%;">
-                    <h3 style="margin-bottom: 1.5rem; color: #8B4513; font-size: 1.3rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; margin-top: 0;">
-                        <span style="font-size: 1.5rem;">🏷️</span> Filtrer par type de catégorie :
-                    </h3>
-                    <div class="types-categories-buttons" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; width: 100%;">
-                        <a href="products.php?category=<?php echo $categoryId; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $minPrice > 0 ? '&min_price=' . $minPrice : ''; ?><?php echo $maxPrice > 0 ? '&max_price=' . $maxPrice : ''; ?>" 
-                           class="type-category-btn <?php echo $typeCategoryId == 0 ? 'active' : ''; ?>"
-                           style="padding: 0.85rem 1.75rem; background: <?php echo $typeCategoryId == 0 ? 'linear-gradient(135deg, #8B4513 0%, #2C1810 100%)' : '#FFFFFF'; ?>; color: <?php echo $typeCategoryId == 0 ? '#FFFFFF' : '#333333'; ?>; border-radius: 25px; text-decoration: none; font-weight: <?php echo $typeCategoryId == 0 ? '700' : '600'; ?>; font-size: 0.95rem; transition: all 0.3s ease; border: 2px solid <?php echo $typeCategoryId == 0 ? '#8B4513' : '#E0E0E0'; ?>; display: inline-flex; align-items: center; justify-content: center; box-shadow: <?php echo $typeCategoryId == 0 ? '0 6px 20px rgba(139,69,19,0.4)' : '0 2px 5px rgba(0,0,0,0.05)'; ?>; position: relative; overflow: hidden; cursor: pointer; transform: <?php echo $typeCategoryId == 0 ? 'translateY(-2px)' : 'none'; ?>;">
-                            Tous les types<?php echo $typeCategoryId == 0 ? ' ✓' : ''; ?>
-                        </a>
-                        <?php foreach ($typesCategories as $typeCat): ?>
-                            <a href="products.php?category=<?php echo $categoryId; ?>&type_category=<?php echo $typeCat['id']; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?><?php echo $minPrice > 0 ? '&min_price=' . $minPrice : ''; ?><?php echo $maxPrice > 0 ? '&max_price=' . $maxPrice : ''; ?>" 
-                               class="type-category-btn <?php echo $typeCategoryId == $typeCat['id'] ? 'active' : ''; ?>"
-                               style="padding: 0.85rem 1.75rem; background: <?php echo $typeCategoryId == $typeCat['id'] ? 'linear-gradient(135deg, #8B4513 0%, #2C1810 100%)' : '#FFFFFF'; ?>; color: <?php echo $typeCategoryId == $typeCat['id'] ? '#FFFFFF' : '#333333'; ?>; border-radius: 25px; text-decoration: none; font-weight: <?php echo $typeCategoryId == $typeCat['id'] ? '700' : '600'; ?>; font-size: 0.95rem; transition: all 0.3s ease; border: 2px solid <?php echo $typeCategoryId == $typeCat['id'] ? '#8B4513' : '#E0E0E0'; ?>; display: inline-flex; align-items: center; justify-content: center; box-shadow: <?php echo $typeCategoryId == $typeCat['id'] ? '0 6px 20px rgba(139,69,19,0.4)' : '0 2px 5px rgba(0,0,0,0.05)'; ?>; position: relative; overflow: hidden; cursor: pointer; transform: <?php echo $typeCategoryId == $typeCat['id'] ? 'translateY(-2px)' : 'none'; ?>;">
-                                <?php echo clean($typeCat['name']); ?><?php echo $typeCategoryId == $typeCat['id'] ? ' ✓' : ''; ?>
-                            </a>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-            <?php endif; ?>
+            <!-- Boutons de filtrage par types de catégories supprimés (sélection via le formulaire horizontal) -->
 
             <!-- Liste des produits -->
             <div class="products-content">
@@ -278,8 +497,8 @@ if ($categoryId > 0) {
                                             <h2><?php echo clean($product['name']); ?></h2>
                                             <p class="product-category">
                                                 <?php echo clean($product['category_name']); ?>
-                                                <?php if (!empty($product['type_category_name'])): ?>
-                                                    <span style="color: var(--primary-color); font-weight: 600;"> → <?php echo clean($product['type_category_name']); ?></span>
+                                                <?php if (!empty($product['type_name'])): ?>
+                                                    <span style="color: var(--primary-color); font-weight: 600;"> → <?php echo clean($product['type_name']); ?></span>
                                                 <?php endif; ?>
                                             </p>
                                             <div class="product-price">
@@ -311,7 +530,7 @@ if ($categoryId > 0) {
                                     <button class="btn-add-cart" 
                                             type="button"
                                             data-product-id="<?php echo $product['id']; ?>"
-                                            data-type-category="<?php echo !empty($product['type_category_name']) ? strtolower(trim($product['type_category_name'])) : ''; ?>"
+                                            data-type-category="<?php echo !empty($product['type_name']) ? strtolower(trim($product['type_name'])) : ''; ?>"
                                             data-unit-price="<?php echo $product['unit_price']; ?>"
                                             data-product-colors="<?php echo $productColorsJson; ?>"
                                             onclick="window.handleAddToCartClickFromList(event, this)">
@@ -365,17 +584,6 @@ if ($categoryId > 0) {
                                oninput="window.calculateModalPrice()">
                     </div>
                 </div>
-                <!-- Sélecteur de couleur (si le produit a des couleurs) -->
-                <div id="modal-color-selector" style="display: none; margin-bottom: 1.5rem;">
-                    <label style="display: block; margin-bottom: 0.75rem; font-weight: 600; color: var(--text-dark);">
-                        🎨 Choisir une couleur *
-                    </label>
-                    <div id="modal-colors-list" style="display: flex; flex-wrap: wrap; gap: 0.75rem;">
-                        <!-- Les options de couleur seront générées dynamiquement par JavaScript -->
-                    </div>
-                    <input type="hidden" id="modal-selected-color" name="selected_color" value="">
-                </div>
-                
                 <div id="modal-price-calculation" style="display: none; padding: 1rem; background: var(--light-color); border-radius: 8px; border: 2px solid var(--primary-color); margin-bottom: 1.5rem;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                         <span style="color: var(--text-light);">Dimensions:</span>
@@ -585,11 +793,13 @@ if ($categoryId > 0) {
             console.log('unitPrice:', unitPrice);
             console.log('productColors:', productColors);
             
-            // Vérifier si le type est "authentique"
-            const isAuthentique = typeCategory.toLowerCase() === 'authentique' || typeCategory.toLowerCase() === 'authentic';
+            // Vérifier les types sans dimensions : authentique / fixe
+            const lowerType = typeCategory.toLowerCase();
+            const isAuthentique = lowerType === 'authentique' || lowerType === 'authentic';
+            const isFixe = lowerType === 'fixe' || lowerType === 'fix';
             
-            if (isAuthentique) {
-                console.log('→ Ajout direct (authentique)');
+            if (isAuthentique || isFixe) {
+                console.log('→ Ajout direct (type sans dimensions)');
                 // Ajouter directement au panier
                 addToCartDirectly(productId, productColors.length > 0 ? productColors[0].name : '');
             } else {
@@ -757,8 +967,51 @@ if ($categoryId > 0) {
         }
         
         // Application automatique des filtres
-        // Filtre par catégorie - application immédiate
+        // Filtre par type -> met à jour les catégories puis applique
+        const typeFilter = document.getElementById('type-filter');
         const categoryFilter = document.getElementById('category-filter');
+
+        function loadCategoriesByType(typeId, selectedCategoryId = '') {
+            if (!categoryFilter) return;
+            categoryFilter.disabled = true;
+            categoryFilter.innerHTML = '<option value=\"\">Chargement...</option>';
+
+            const url = 'api/get_categories_by_type.php' + (typeId ? ('?type_id=' + typeId) : '');
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    categoryFilter.innerHTML = '<option value=\"\">Toutes les catégories</option>';
+                    if (data.categories && Array.isArray(data.categories)) {
+                        data.categories.forEach(cat => {
+                            const opt = document.createElement('option');
+                            opt.value = cat.id;
+                            opt.textContent = cat.name;
+                            if (selectedCategoryId && selectedCategoryId == cat.id) {
+                                opt.selected = true;
+                            }
+                            categoryFilter.appendChild(opt);
+                        });
+                    }
+                    categoryFilter.disabled = false;
+                })
+                .catch(() => {
+                    categoryFilter.innerHTML = '<option value=\"\">Erreur de chargement</option>';
+                    categoryFilter.disabled = true;
+                });
+        }
+
+        if (typeFilter) {
+            typeFilter.addEventListener('change', function() {
+                const typeId = this.value;
+                if (categoryFilter) {
+                    categoryFilter.value = '';
+                }
+                loadCategoriesByType(typeId);
+                applyFilters();
+            });
+        }
+
+        // Filtre par catégorie - application immédiate
         if (categoryFilter) {
             categoryFilter.addEventListener('change', function() {
                 applyFilters();
@@ -768,6 +1021,7 @@ if ($categoryId > 0) {
         // Filtre par prix - application immédiate
         const minPriceFilter = document.getElementById('min-price-filter');
         const maxPriceFilter = document.getElementById('max-price-filter');
+        const colorHiddenInput = document.getElementById('color-filter');
         
         if (minPriceFilter) {
             minPriceFilter.addEventListener('change', function() {
@@ -778,6 +1032,52 @@ if ($categoryId > 0) {
         if (maxPriceFilter) {
             maxPriceFilter.addEventListener('change', function() {
                 applyFilters();
+            });
+        }
+
+        // Select couleur personnalisé
+        const colorSelectWrapper = document.getElementById('color-select');
+        const colorSelectToggle = document.getElementById('color-select-toggle');
+        const colorSelectOptions = document.getElementById('color-select-options');
+
+        if (colorSelectWrapper && colorSelectToggle && colorSelectOptions && colorHiddenInput) {
+            const labelSpan = colorSelectToggle.querySelector('.color-select-label');
+            const mainCircle = colorSelectToggle.querySelector('.color-circle');
+            const optionNodes = colorSelectOptions.querySelectorAll('.color-option');
+
+            // Ouvrir / fermer la liste
+            colorSelectToggle.addEventListener('click', function (e) {
+                e.stopPropagation();
+                colorSelectWrapper.classList.toggle('open');
+            });
+
+            // Sélection d'une couleur
+            optionNodes.forEach(opt => {
+                opt.addEventListener('click', function () {
+                    const value = this.getAttribute('data-value') || '';
+                    const cls = this.getAttribute('data-class') || 'all-colors';
+                    const text = this.querySelector('.color-option-label').textContent.trim();
+
+                    // Mettre à jour le champ caché (utilisé par le formulaire PHP)
+                    colorHiddenInput.value = value;
+
+                    // Mettre à jour l'affichage principal
+                    labelSpan.textContent = text;
+                    mainCircle.className = 'color-circle ' + cls;
+
+                    // Mettre à jour l'état actif
+                    optionNodes.forEach(o => o.classList.remove('active'));
+                    this.classList.add('active');
+
+                    // Fermer la liste et appliquer les filtres
+                    colorSelectWrapper.classList.remove('open');
+                    applyFilters();
+                });
+            });
+
+            // Fermer si clic à l'extérieur
+            document.addEventListener('click', function () {
+                colorSelectWrapper.classList.remove('open');
             });
         }
         

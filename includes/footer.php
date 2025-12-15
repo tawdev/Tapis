@@ -23,8 +23,8 @@
             </div>
             <div class="footer-section">
                 <h4>Contact</h4>
-                <p>Email: contact@waootapis.ma</p>
-                <p>Téléphone: +212 674-862173</p>
+                <p>Email: contact@waootapis.com</p>
+                <p>Téléphone: +212 524308038</p>
                 <p>Adresse: N, TAW10, lot Iguder, 48 AV Alla El Fassi Marrakech 40000, Morocco</p>
             </div>
         </div>

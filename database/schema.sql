@@ -3,41 +3,28 @@
 
 USE tapis_db;
 
+-- Table des types (doit être créée en premier car categories y fait référence)
+CREATE TABLE IF NOT EXISTS types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Table des catégories
 CREATE TABLE IF NOT EXISTS categories (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    type_id INT NULL COMMENT 'Référence au type',
     name VARCHAR(100) NOT NULL,
     slug VARCHAR(100) NOT NULL UNIQUE,
     description TEXT,
     image VARCHAR(255) NULL COMMENT 'Chemin vers l\'image de la catégorie (ex: assets/images/categories/nom-image.jpg)',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Table des types de catégories (Sous-catégories)
-CREATE TABLE IF NOT EXISTS types_categories (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    category_id INT NOT NULL COMMENT 'Référence à la catégorie parente',
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    image VARCHAR(255) NULL COMMENT 'Chemin vers l\'image du type de catégorie (ex: assets/images/types_categories/nom-image.jpg)',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
-    INDEX idx_category (category_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Table des types de catégories (Sous-catégories)
-CREATE TABLE IF NOT EXISTS types_categories (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    category_id INT NOT NULL COMMENT 'Référence à la catégorie parente',
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    image VARCHAR(255) NULL COMMENT 'Chemin vers l\'image du type de catégorie (ex: assets/images/types_categories/nom-image.jpg)',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
-    INDEX idx_category (category_id)
+    FOREIGN KEY (type_id) REFERENCES types(id) ON DELETE SET NULL,
+    INDEX idx_type (type_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Table des produits
@@ -50,7 +37,7 @@ CREATE TABLE IF NOT EXISTS products (
     price DECIMAL(10, 2) NOT NULL,
     sale_price DECIMAL(10, 2) DEFAULT NULL,
     category_id INT NOT NULL,
-    type_category_id INT NULL COMMENT 'Référence au type de catégorie (sous-catégorie)',
+    type_id INT NULL COMMENT 'Référence au type',
     material VARCHAR(100),
     size VARCHAR(50),
     color TEXT NULL COMMENT 'Couleurs du produit au format JSON: [{"name":"Rouge","index":1,"image":"path"},...] ou couleur simple (ancien format)',
@@ -61,9 +48,9 @@ CREATE TABLE IF NOT EXISTS products (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
-    FOREIGN KEY (type_category_id) REFERENCES types_categories(id) ON DELETE SET NULL,
+    FOREIGN KEY (type_id) REFERENCES types(id) ON DELETE SET NULL,
     INDEX idx_category (category_id),
-    INDEX idx_type_category (type_category_id),
+    INDEX idx_type (type_id),
     INDEX idx_status (status),
     INDEX idx_featured (featured),
     INDEX idx_best_seller (best_seller)
@@ -164,14 +151,18 @@ INSERT INTO product_images (product_id, image_path, is_primary, display_order) V
 (4, 'assets/images/products/tapis-turk-1.jpg', 1, 1),
 (5, 'assets/images/products/tapis-persan-1.jpg', 1, 1);
 
--- Insertion de données de test pour les types de catégories (Sous-catégories)
--- Note: La colonne 'image' est optionnelle et peut être NULL
-INSERT INTO types_categories (category_id, name, description, image) VALUES
-(1, 'Tapis Moderne Minimaliste', 'Tapis modernes avec design minimaliste et épuré', NULL),
-(1, 'Tapis Moderne Coloré', 'Tapis modernes aux couleurs vives et contemporaines', NULL),
-(2, 'Tapis Classique Persan', 'Tapis persans classiques traditionnels aux motifs raffinés', NULL),
-(2, 'Tapis Classique Européen', 'Tapis classiques de style européen élégant', NULL),
-(3, 'Tapis Oriental Traditionnel', 'Tapis orientaux aux motifs traditionnels authentiques', NULL),
-(5, 'Tapis Marocain Beni Ourain', 'Tapis marocains Beni Ourain authentiques tissés à la main', NULL),
-(5, 'Tapis Marocain Azilal', 'Tapis marocains Azilal colorés et vibrants', NULL);
+-- Insertion de données de test pour les types
+INSERT INTO types (name, description) VALUES
+('Moderne Minimaliste', 'Tapis modernes avec design minimaliste et épuré'),
+('Moderne Coloré', 'Tapis modernes aux couleurs vives et contemporaines'),
+('Classique Persan', 'Tapis persans classiques traditionnels aux motifs raffinés'),
+('Classique Européen', 'Tapis classiques de style européen élégant'),
+('Oriental Traditionnel', 'Tapis orientaux aux motifs traditionnels authentiques'),
+('Marocain Beni Ourain', 'Tapis marocains Beni Ourain authentiques tissés à la main'),
+('Marocain Azilal', 'Tapis marocains Azilal colorés et vibrants');
+
+-- Mise à jour des catégories avec type_id (exemple)
+-- UPDATE categories SET type_id = 1 WHERE id = 1;
+-- UPDATE categories SET type_id = 3 WHERE id = 2;
+-- etc.
 

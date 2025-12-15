@@ -77,10 +77,10 @@ if (!empty($_SESSION['cart'])) {
     $stmt = $db->prepare("SELECT p.*, 
                           (SELECT image_path FROM product_images WHERE product_id = p.id AND is_primary = 1 LIMIT 1) as image,
                           c.name as category_name,
-                          tc.name as type_category_name
+                          t.name as type_name
                           FROM products p 
                           LEFT JOIN categories c ON p.category_id = c.id
-                          LEFT JOIN types_categories tc ON p.type_category_id = tc.id
+                          LEFT JOIN types t ON p.type_id = t.id
                           WHERE p.id IN ($placeholders) AND p.status = 'active'");
     $stmt->execute($productIds);
     $products = $stmt->fetchAll();
@@ -121,16 +121,16 @@ if (!empty($_SESSION['cart'])) {
                 $subtotal = $itemPrice * $quantity;
             }
             
-            $total += $subtotal;
-            
-            $cartItems[] = [
-                'product' => $product,
-                'quantity' => $quantity,
+        $total += $subtotal;
+        
+        $cartItems[] = [
+            'product' => $product,
+            'quantity' => $quantity,
                 'length' => $length,
                 'width' => $width,
                 'item_price' => $itemPrice,
-                'subtotal' => $subtotal
-            ];
+            'subtotal' => $subtotal
+        ];
         }
     }
 }
@@ -188,9 +188,9 @@ if (!empty($_SESSION['cart'])) {
                                                     <h3><?php echo clean($product['name']); ?></h3>
                                                     <p style="color: var(--text-light); font-size: 0.9rem; margin: 0.25rem 0;">
                                                         <?php echo clean($product['category_name']); ?>
-                                                        <?php if (!empty($product['type_category_name'])): ?>
+                                                        <?php if (!empty($product['type_name'])): ?>
                                                             <span style="margin-left: 0.5rem; padding: 0.25rem 0.75rem; background: var(--accent-color); color: var(--white); border-radius: 5px; font-size: 0.75rem; font-weight: 600;">
-                                                                → <?php echo clean($product['type_category_name']); ?>
+                                                                → <?php echo clean($product['type_name']); ?>
                                                             </span>
                                                         <?php endif; ?>
                                                     </p>
@@ -225,11 +225,11 @@ if (!empty($_SESSION['cart'])) {
                                                     <strong style="color: var(--primary-color);"><?php echo formatPrice($item['item_price']); ?></strong>
                                                 </div>
                                             <?php else: ?>
-                                                <?php if ($product['sale_price']): ?>
-                                                    <span class="old-price"><?php echo formatPrice($product['price']); ?></span>
-                                                    <span class="current-price"><?php echo formatPrice($product['sale_price']); ?></span>
-                                                <?php else: ?>
-                                                    <span class="current-price"><?php echo formatPrice($product['price']); ?></span>
+                                            <?php if ($product['sale_price']): ?>
+                                                <span class="old-price"><?php echo formatPrice($product['price']); ?></span>
+                                                <span class="current-price"><?php echo formatPrice($product['sale_price']); ?></span>
+                                            <?php else: ?>
+                                                <span class="current-price"><?php echo formatPrice($product['price']); ?></span>
                                                 <?php endif; ?>
                                             <?php endif; ?>
                                         </td>

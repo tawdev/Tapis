@@ -20,6 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $name = trim($_POST['name'] ?? '');
         $description = trim($_POST['description'] ?? '');
         $categoryId = isset($_POST['category_id']) ? (int)$_POST['category_id'] : 0;
+        $typeId = !empty($_POST['type_id']) ? (int)$_POST['type_id'] : null;
         $imagePath = null;
         
         // Récupérer l'image existante si modification
@@ -69,32 +70,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $slug = generateSlug($name);
             
+            // Vérifier l'unicité du slug et générer un slug unique si nécessaire
             if ($action === 'add') {
-                $stmt = $db->prepare("INSERT INTO categories (name, slug, description, image) VALUES (:name, :slug, :description, :image)");
+                // Vérifier si le slug existe déjà
+                $stmt = $db->prepare("SELECT id FROM categories WHERE slug = :slug");
+                $stmt->execute([':slug' => $slug]);
+                $existingCategory = $stmt->fetch();
+                
+                // Si le slug existe, ajouter un suffixe numérique
+                if ($existingCategory) {
+                    $baseSlug = $slug;
+                    $counter = 1;
+                    do {
+                        $slug = $baseSlug . '-' . $counter;
+                        $stmt = $db->prepare("SELECT id FROM categories WHERE slug = :slug");
+                        $stmt->execute([':slug' => $slug]);
+                        $existingCategory = $stmt->fetch();
+                        $counter++;
+                    } while ($existingCategory && $counter < 1000); // Limite de sécurité
+                }
+                
+                $stmt = $db->prepare("INSERT INTO categories (name, slug, description, image, type_id) VALUES (:name, :slug, :description, :image, :type_id)");
                 $stmt->execute([
                     ':name' => $name, 
                     ':slug' => $slug, 
                     ':description' => $description,
-                    ':image' => $imagePath
+                    ':image' => $imagePath,
+                    ':type_id' => $typeId
                 ]);
                 $success = true;
             } else {
+                // Pour la mise à jour, vérifier que le slug n'est pas utilisé par une autre catégorie
+                $stmt = $db->prepare("SELECT id FROM categories WHERE slug = :slug AND id != :id");
+                $stmt->execute([':slug' => $slug, ':id' => $categoryId]);
+                $existingCategory = $stmt->fetch();
+                
+                // Si le slug existe pour une autre catégorie, générer un slug unique
+                if ($existingCategory) {
+                    $baseSlug = $slug;
+                    $counter = 1;
+                    do {
+                        $slug = $baseSlug . '-' . $counter;
+                        $stmt = $db->prepare("SELECT id FROM categories WHERE slug = :slug AND id != :id");
+                        $stmt->execute([':slug' => $slug, ':id' => $categoryId]);
+                        $existingCategory = $stmt->fetch();
+                        $counter++;
+                    } while ($existingCategory && $counter < 1000); // Limite de sécurité
+                }
+                
                 if ($imagePath) {
-                    $stmt = $db->prepare("UPDATE categories SET name = :name, slug = :slug, description = :description, image = :image WHERE id = :id");
+                    $stmt = $db->prepare("UPDATE categories SET name = :name, slug = :slug, description = :description, image = :image, type_id = :type_id WHERE id = :id");
                     $stmt->execute([
                         ':id' => $categoryId, 
                         ':name' => $name, 
                         ':slug' => $slug, 
                         ':description' => $description,
-                        ':image' => $imagePath
+                        ':image' => $imagePath,
+                        ':type_id' => $typeId
                     ]);
                 } else {
-                    $stmt = $db->prepare("UPDATE categories SET name = :name, slug = :slug, description = :description WHERE id = :id");
+                    $stmt = $db->prepare("UPDATE categories SET name = :name, slug = :slug, description = :description, type_id = :type_id WHERE id = :id");
                     $stmt->execute([
                         ':id' => $categoryId, 
                         ':name' => $name, 
                         ':slug' => $slug, 
-                        ':description' => $description
+                        ':description' => $description,
+                        ':type_id' => $typeId
                     ]);
                 }
                 $success = true;
@@ -120,8 +161,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Récupérer les catégories
-$stmt = $db->query("SELECT c.*, COUNT(p.id) as product_count FROM categories c LEFT JOIN products p ON c.id = p.category_id GROUP BY c.id ORDER BY c.name");
+// Récupérer les types pour le select
+$stmt = $db->query("SELECT * FROM types ORDER BY name");
+$types = $stmt->fetchAll();
+
+// Récupérer les catégories avec le type
+$stmt = $db->query("SELECT c.*, c.type_id, t.name as type_name, COUNT(p.id) as product_count 
+                    FROM categories c 
+                    LEFT JOIN types t ON c.type_id = t.id 
+                    LEFT JOIN products p ON c.id = p.category_id 
+                    GROUP BY c.id 
+                    ORDER BY c.name");
 $categories = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
@@ -152,11 +202,11 @@ $categories = $stmt->fetchAll();
                     <span class="alert-icon">⚠️</span>
                     <div class="alert-content">
                         <strong>Erreur(s) :</strong>
-                        <ul>
-                            <?php foreach ($errors as $error): ?>
-                                <li><?php echo clean($error); ?></li>
-                            <?php endforeach; ?>
-                        </ul>
+                    <ul>
+                        <?php foreach ($errors as $error): ?>
+                            <li><?php echo clean($error); ?></li>
+                        <?php endforeach; ?>
+                    </ul>
                     </div>
                 </div>
             <?php endif; ?>
@@ -176,6 +226,19 @@ $categories = $stmt->fetchAll();
                     <div class="form-group">
                         <label for="description">Description</label>
                         <textarea id="description" name="description" rows="3"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="type_id">Type</label>
+                        <select id="type_id" name="type_id">
+                            <option value="">Aucun type</option>
+                            <?php foreach ($types as $type): ?>
+                                <option value="<?php echo $type['id']; ?>">
+                                    <?php echo clean($type['name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small class="form-help">Sélectionnez un type pour cette catégorie (optionnel)</small>
                     </div>
 
                     <div class="form-group">
@@ -204,6 +267,7 @@ $categories = $stmt->fetchAll();
                             <tr>
                                 <th>Image</th>
                                 <th>Nom</th>
+                                <th>Type</th>
                                 <th>Slug</th>
                                 <th>Produits</th>
                                 <th>Actions</th>
@@ -221,26 +285,35 @@ $categories = $stmt->fetchAll();
                                             <?php endif; ?>
                                         </td>
                                         <td><strong><?php echo clean($category['name']); ?></strong></td>
+                                        <td>
+                                            <?php if (!empty($category['type_name'])): ?>
+                                                <span style="padding: 0.25rem 0.75rem; background: var(--primary-color); color: white; border-radius: 12px; font-size: 0.85rem; font-weight: 600;">
+                                                    <?php echo clean($category['type_name']); ?>
+                                                </span>
+                                            <?php else: ?>
+                                                <span style="color: #999; font-style: italic;">Aucun type</span>
+                                            <?php endif; ?>
+                                        </td>
                                         <td><code><?php echo clean($category['slug']); ?></code></td>
                                         <td>
                                             <span class="badge badge-info"><?php echo $category['product_count']; ?> produit(s)</span>
                                         </td>
                                         <td>
                                             <div class="admin-actions">
-                                                <button onclick="editCategory(<?php echo $category['id']; ?>, '<?php echo addslashes($category['name']); ?>', '<?php echo addslashes($category['description'] ?? ''); ?>', '<?php echo addslashes($category['image'] ?? ''); ?>')" 
+                                                <button onclick="editCategory(<?php echo $category['id']; ?>, '<?php echo addslashes($category['name']); ?>', '<?php echo addslashes($category['description'] ?? ''); ?>', '<?php echo addslashes($category['image'] ?? ''); ?>', <?php echo $category['type_id'] ?? 'null'; ?>)" 
                                                         class="btn btn-sm btn-primary">✏️ Modifier</button>
                                                 <form method="POST" class="inline-form" onsubmit="return confirm('Êtes-vous sûr ? Cette action supprimera tous les produits de cette catégorie.');">
-                                                    <input type="hidden" name="action" value="delete">
-                                                    <input type="hidden" name="category_id" value="<?php echo $category['id']; ?>">
+                                                <input type="hidden" name="action" value="delete">
+                                                <input type="hidden" name="category_id" value="<?php echo $category['id']; ?>">
                                                     <button type="submit" class="btn btn-sm btn-danger">🗑️ Supprimer</button>
-                                                </form>
+                                            </form>
                                             </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="5" class="empty-state">
+                                    <td colspan="6" class="empty-state">
                                         <div class="empty-state-content">
                                             <span class="empty-icon">📁</span>
                                             <p>Aucune catégorie enregistrée</p>
@@ -257,12 +330,13 @@ $categories = $stmt->fetchAll();
 
     <script src="../assets/js/main.js"></script>
     <script>
-        function editCategory(id, name, description, image) {
+        function editCategory(id, name, description, image, typeId) {
             document.getElementById('form-title').textContent = 'Modifier la catégorie';
             document.getElementById('form-action').value = 'edit';
             document.getElementById('form-category-id').value = id;
             document.getElementById('name').value = name;
             document.getElementById('description').value = description;
+            document.getElementById('type_id').value = typeId || '';
             
             // Afficher l'image actuelle si elle existe
             const currentImageDiv = document.getElementById('current-image');
@@ -285,6 +359,7 @@ $categories = $stmt->fetchAll();
             document.getElementById('form-category-id').value = '0';
             document.getElementById('name').value = '';
             document.getElementById('description').value = '';
+            document.getElementById('type_id').value = '';
             document.getElementById('image').value = '';
             document.getElementById('image-preview').style.display = 'none';
             document.getElementById('current-image').innerHTML = '';
