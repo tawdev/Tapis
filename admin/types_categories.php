@@ -9,6 +9,219 @@ if (!isAdmin()) {
 
 $db = getDB();
 
+// Gestion du formulaire
+$errors = [];
+$success = false;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+
+    if ($action === 'add' || $action === 'edit') {
+        $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+        $name = trim($_POST['name'] ?? '');
+        $categoryId = isset($_POST['category_id']) ? (int)$_POST['category_id'] : 0;
+
+        if ($name === '') {
+            $errors[] = "Le nom du type de catégorie est requis.";
+        }
+        if ($categoryId <= 0) {
+            $errors[] = "Veuillez sélectionner une catégorie.";
+        }
+
+        if (empty($errors)) {
+            if ($action === 'add') {
+                $stmt = $db->prepare("INSERT INTO types_categorier (name, category_id) VALUES (:name, :category_id)");
+                $stmt->execute([
+                    ':name' => $name,
+                    ':category_id' => $categoryId,
+                ]);
+                $success = true;
+            } else {
+                $stmt = $db->prepare("UPDATE types_categorier SET name = :name, category_id = :category_id WHERE id = :id");
+                $stmt->execute([
+                    ':id' => $id,
+                    ':name' => $name,
+                    ':category_id' => $categoryId,
+                ]);
+                $success = true;
+            }
+        }
+    } elseif ($action === 'delete') {
+        $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+        if ($id > 0) {
+            // Si في المستقبل كانت عندنا علاقات مع جدول آخر، هنا ندير vérification قبل الحذف
+            $stmt = $db->prepare("DELETE FROM types_categorier WHERE id = :id");
+            $stmt->execute([':id' => $id]);
+            $success = true;
+        }
+    }
+}
+
+// Récupérer la liste des catégories pour le select
+$stmt = $db->query("SELECT id, name FROM categories ORDER BY name");
+$categories = $stmt->fetchAll();
+
+// Récupérer tous les types_categorier avec le nom de la catégorie associée
+$stmt = $db->query("SELECT tc.*, c.name AS category_name
+                    FROM types_categorier tc
+                    INNER JOIN categories c ON tc.category_id = c.id
+                    ORDER BY c.name, tc.name");
+$typesCategorier = $stmt->fetchAll();
+?>
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Types de Catégories - Admin</title>
+    <link rel="stylesheet" href="../assets/css/style.css">
+    <link rel="stylesheet" href="../assets/css/admin.css">
+</head>
+<body class="admin-body">
+    <?php include 'includes/header.php'; ?>
+
+    <main class="admin-main">
+        <div class="admin-container">
+            <h1>Types de Catégories</h1>
+
+            <?php if ($success): ?>
+                <div class="alert alert-success">
+                    <span class="alert-icon">✅</span>
+                    <span>Opération réalisée avec succès.</span>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($errors)): ?>
+                <div class="alert alert-error">
+                    <span class="alert-icon">⚠️</span>
+                    <div class="alert-content">
+                        <strong>Erreur(s) :</strong>
+                        <ul>
+                            <?php foreach ($errors as $error): ?>
+                                <li><?php echo clean($error); ?></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <div class="admin-section">
+                <h2 id="form-title">Ajouter un type de catégorie</h2>
+                <form method="POST" class="admin-form" id="type-category-form">
+                    <input type="hidden" name="action" id="form-action" value="add">
+                    <input type="hidden" name="id" id="form-id" value="0">
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="name">Nom du type *</label>
+                            <input type="text" id="name" name="name" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="category_id">Catégorie *</label>
+                            <select id="category_id" name="category_id" required>
+                                <option value="">Sélectionner une catégorie</option>
+                                <?php foreach ($categories as $category): ?>
+                                    <option value="<?php echo (int)$category['id']; ?>">
+                                        <?php echo clean($category['name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
+                        <button type="button" class="btn btn-secondary" onclick="resetForm()">❌ Annuler</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="admin-section">
+                <h2>Liste des types de catégories</h2>
+                <div class="table-wrapper">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Nom</th>
+                                <th>Catégorie</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (count($typesCategorier) > 0): ?>
+                                <?php foreach ($typesCategorier as $row): ?>
+                                    <tr>
+                                        <td><?php echo (int)$row['id']; ?></td>
+                                        <td><?php echo clean($row['name']); ?></td>
+                                        <td><?php echo clean($row['category_name']); ?></td>
+                                        <td>
+                                            <div class="admin-actions">
+                                                <button type="button"
+                                                        class="btn btn-sm btn-primary"
+                                                        onclick="editTypeCategory(<?php echo (int)$row['id']; ?>, '<?php echo addslashes($row['name']); ?>', <?php echo (int)$row['category_id']; ?>)">
+                                                    ✏️ Modifier
+                                                </button>
+                                                <form method="POST" class="inline-form" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer ce type de catégorie ?');">
+                                                    <input type="hidden" name="action" value="delete">
+                                                    <input type="hidden" name="id" value="<?php echo (int)$row['id']; ?>">
+                                                    <button type="submit" class="btn btn-sm btn-danger">🗑️ Supprimer</button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="4" class="empty-state">
+                                        <div class="empty-state-content">
+                                            <span class="empty-icon">📂</span>
+                                            <p>Aucun type de catégorie enregistré pour le moment.</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="../assets/js/main.js"></script>
+    <script>
+        function editTypeCategory(id, name, categoryId) {
+            document.getElementById('form-title').textContent = 'Modifier le type de catégorie';
+            document.getElementById('form-action').value = 'edit';
+            document.getElementById('form-id').value = id;
+            document.getElementById('name').value = name;
+            document.getElementById('category_id').value = categoryId;
+            document.getElementById('type-category-form').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function resetForm() {
+            document.getElementById('form-title').textContent = 'Ajouter un type de catégorie';
+            document.getElementById('form-action').value = 'add';
+            document.getElementById('form-id').value = '0';
+            document.getElementById('name').value = '';
+            document.getElementById('category_id').value = '';
+        }
+    </script>
+</body>
+</html>
+
+<?php
+session_start();
+require_once '../config/database.php';
+require_once '../config/functions.php';
+
+if (!isAdmin()) {
+    redirect('login.php');
+}
+
+$db = getDB();
+
 // Traitement du formulaire
 $errors = [];
 $success = false;

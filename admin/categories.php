@@ -144,19 +144,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'delete') {
         $categoryId = isset($_POST['category_id']) ? (int)$_POST['category_id'] : 0;
         if ($categoryId > 0) {
-            // Récupérer l'image avant suppression
-            $stmt = $db->prepare("SELECT image FROM categories WHERE id = :id");
+            // Vérifier si la catégorie a des produits associés
+            $stmt = $db->prepare("SELECT COUNT(*) as count FROM products WHERE category_id = :id");
             $stmt->execute([':id' => $categoryId]);
-            $category = $stmt->fetch();
+            $productCount = $stmt->fetch()['count'];
             
-            // Supprimer l'image si elle existe
-            if ($category && $category['image'] && file_exists('../' . $category['image'])) {
-                unlink('../' . $category['image']);
+            if ($productCount > 0) {
+                // Vérifier si certains de ces produits sont dans des commandes
+                $stmt = $db->prepare("SELECT COUNT(DISTINCT oi.product_id) as count 
+                                      FROM order_items oi 
+                                      INNER JOIN products p ON oi.product_id = p.id 
+                                      WHERE p.category_id = :id");
+                $stmt->execute([':id' => $categoryId]);
+                $productsInOrders = $stmt->fetch()['count'];
+                
+                if ($productsInOrders > 0) {
+                    $errors[] = "Impossible de supprimer cette catégorie. Elle contient $productCount produit(s), dont $productsInOrders sont présents dans des commandes. Veuillez d'abord supprimer ou modifier les commandes concernées.";
+                } else {
+                    // Les produits ne sont pas dans des commandes, on peut les supprimer avec la catégorie
+                    // (grâce à ON DELETE CASCADE sur products)
+                    $stmt = $db->prepare("SELECT image FROM categories WHERE id = :id");
+                    $stmt->execute([':id' => $categoryId]);
+                    $category = $stmt->fetch();
+                    
+                    // Supprimer l'image si elle existe
+                    if ($category && $category['image'] && file_exists('../' . $category['image'])) {
+                        unlink('../' . $category['image']);
+                    }
+                    
+                    $stmt = $db->prepare("DELETE FROM categories WHERE id = :id");
+                    $stmt->execute([':id' => $categoryId]);
+                    $success = true;
+                }
+            } else {
+                // Aucun produit dans cette catégorie, on peut supprimer directement
+                $stmt = $db->prepare("SELECT image FROM categories WHERE id = :id");
+                $stmt->execute([':id' => $categoryId]);
+                $category = $stmt->fetch();
+                
+                // Supprimer l'image si elle existe
+                if ($category && $category['image'] && file_exists('../' . $category['image'])) {
+                    unlink('../' . $category['image']);
+                }
+                
+                $stmt = $db->prepare("DELETE FROM categories WHERE id = :id");
+                $stmt->execute([':id' => $categoryId]);
+                $success = true;
             }
-            
-            $stmt = $db->prepare("DELETE FROM categories WHERE id = :id");
-            $stmt->execute([':id' => $categoryId]);
-            $success = true;
         }
     }
 }
@@ -302,7 +336,7 @@ $categories = $stmt->fetchAll();
                                             <div class="admin-actions">
                                                 <button onclick="editCategory(<?php echo $category['id']; ?>, '<?php echo addslashes($category['name']); ?>', '<?php echo addslashes($category['description'] ?? ''); ?>', '<?php echo addslashes($category['image'] ?? ''); ?>', <?php echo $category['type_id'] ?? 'null'; ?>)" 
                                                         class="btn btn-sm btn-primary">✏️ Modifier</button>
-                                                <form method="POST" class="inline-form" onsubmit="return confirm('Êtes-vous sûr ? Cette action supprimera tous les produits de cette catégorie.');">
+                                                <form method="POST" class="inline-form" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer cette catégorie ?\n\n⚠️ Attention : Cette action supprimera tous les produits de cette catégorie.\n\nSi certains produits sont présents dans des commandes, la suppression sera bloquée.');">
                                                 <input type="hidden" name="action" value="delete">
                                                 <input type="hidden" name="category_id" value="<?php echo $category['id']; ?>">
                                                     <button type="submit" class="btn btn-sm btn-danger">🗑️ Supprimer</button>

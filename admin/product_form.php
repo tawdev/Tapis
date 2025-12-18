@@ -146,6 +146,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $salePrice = !empty($_POST['sale_price']) ? (float)$_POST['sale_price'] : null;
     $typeId = !empty($_POST['type_id']) ? (int)$_POST['type_id'] : null;
     $categoryId = isset($_POST['category_id']) ? (int)$_POST['category_id'] : 0;
+    $typeCategoryId = (isset($_POST['type_category_id']) && $_POST['type_category_id'] !== '')
+        ? (int)$_POST['type_category_id']
+        : null;
     $colorsText = trim($_POST['colors_text'] ?? '');
     $material = trim($_POST['material'] ?? '');
     $size = trim($_POST['size'] ?? '');
@@ -193,6 +196,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = "La catégorie choisie n'appartient pas au type sélectionné";
             }
         }
+
+        // Si un type de catégorie est sélectionné, vérifier qu'il appartient bien à cette catégorie
+        if ($typeCategoryId !== null) {
+            $stmt = $db->prepare("SELECT id FROM types_categorier WHERE id = :id AND category_id = :category_id");
+            $stmt->execute([
+                ':id' => $typeCategoryId,
+                ':category_id' => $categoryId
+            ]);
+            $typeCatRow = $stmt->fetch();
+            if (!$typeCatRow) {
+                $errors[] = "Le type de catégorie sélectionné n'appartient pas à la catégorie choisie";
+            }
+        }
     }
     
     // Validation couleurs texte
@@ -224,10 +240,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($errors)) {
         try {
             $slug = generateSlug($name);
+
+            // S'assurer que le slug est unique pour les produits
+            if ($productId > 0) {
+                // Vérifier si le slug est déjà utilisé par un autre produit
+                $stmt = $db->prepare("SELECT id FROM products WHERE slug = :slug AND id != :id");
+                $stmt->execute([':slug' => $slug, ':id' => $productId]);
+                $existing = $stmt->fetch();
+
+                if ($existing) {
+                    // Générer un slug unique en ajoutant un suffixe numérique
+                    $baseSlug = $slug;
+                    $counter = 1;
+                    do {
+                        $slug = $baseSlug . '-' . $counter;
+                        $stmt = $db->prepare("SELECT id FROM products WHERE slug = :slug AND id != :id");
+                        $stmt->execute([':slug' => $slug, ':id' => $productId]);
+                        $existing = $stmt->fetch();
+                        $counter++;
+                    } while ($existing);
+                }
+            } else {
+                // Insertion : vérifier si le slug existe déjà
+                $stmt = $db->prepare("SELECT id FROM products WHERE slug = :slug");
+                $stmt->execute([':slug' => $slug]);
+                $existing = $stmt->fetch();
+
+                if ($existing) {
+                    $baseSlug = $slug;
+                    $counter = 1;
+                    do {
+                        $slug = $baseSlug . '-' . $counter;
+                        $stmt = $db->prepare("SELECT id FROM products WHERE slug = :slug");
+                        $stmt->execute([':slug' => $slug]);
+                        $existing = $stmt->fetch();
+                        $counter++;
+                    } while ($existing);
+                }
+            }
+
             if ($productId > 0) {
                 // Mise à jour
                 $stmt = $db->prepare("UPDATE products SET name = :name, slug = :slug, description = :description, short_description = :short_description, 
-                                      price = :price, sale_price = :sale_price, category_id = :category_id, type_id = :type_id, material = :material, 
+                                      price = :price, sale_price = :sale_price, category_id = :category_id, type_id = :type_id, type_category_id = :type_category_id, material = :material, 
                                       size = :size, color = :color, stock = :stock, featured = :featured, best_seller = :best_seller, status = :status 
                                       WHERE id = :id");
                 $stmt->execute([
@@ -240,6 +295,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':sale_price' => $salePrice,
                     ':category_id' => $categoryId,
                     ':type_id' => $typeId,
+                    ':type_category_id' => $typeCategoryId,
                     ':material' => $material,
                     ':size' => $size,
                     ':color' => $color,
@@ -250,8 +306,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
             } else {
                 // Insertion
-                $stmt = $db->prepare("INSERT INTO products (name, slug, description, short_description, price, sale_price, category_id, type_id, material, size, color, stock, featured, best_seller, status) 
-                                      VALUES (:name, :slug, :description, :short_description, :price, :sale_price, :category_id, :type_id, :material, :size, :color, :stock, :featured, :best_seller, :status)");
+                $stmt = $db->prepare("INSERT INTO products (name, slug, description, short_description, price, sale_price, category_id, type_id, type_category_id, material, size, color, stock, featured, best_seller, status) 
+                                      VALUES (:name, :slug, :description, :short_description, :price, :sale_price, :category_id, :type_id, :type_category_id, :material, :size, :color, :stock, :featured, :best_seller, :status)");
                 $stmt->execute([
                     ':name' => $name,
                     ':slug' => $slug,
@@ -261,6 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':sale_price' => $salePrice,
                     ':category_id' => $categoryId,
                     ':type_id' => $typeId,
+                    ':type_category_id' => $typeCategoryId,
                     ':material' => $material,
                     ':size' => $size,
                     ':color' => $color,
@@ -496,6 +553,16 @@ if (isset($_GET['success'])) {
                         </select>
                         <small class="form-help">Choisissez d'abord un type pour afficher les catégories associées.</small>
                     </div>
+
+                    <div class="form-group">
+                        <label for="type_category_id">Type de catégorie (si défini pour cette catégorie)</label>
+                        <select id="type_category_id" name="type_category_id" disabled>
+                            <option value="">Aucun type de catégorie pour cette catégorie</option>
+                        </select>
+                        <small class="form-help">
+                            Liste des types définis dans le tableau <code>types_categorier</code> pour la catégorie choisie (optionnel).
+                        </small>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -669,6 +736,7 @@ if (isset($_GET['success'])) {
         // Charger les catégories selon le type sélectionné
         const typeSelect = document.getElementById('type_id');
         const categorySelect = document.getElementById('category_id');
+        const typeCategorySelect = document.getElementById('type_category_id');
         
         function loadCategories(typeId, selectedCategoryId = null) {
             if (!typeId || typeId === '') {
@@ -707,6 +775,54 @@ if (isset($_GET['success'])) {
                     categorySelect.disabled = true;
                 });
         }
+
+        // Charger les types_categorier selon la catégorie sélectionnée
+        function loadTypesCategorier(categoryId, selectedTypeCategoryId = null) {
+            if (!typeCategorySelect) {
+                return;
+            }
+
+            if (!categoryId || categoryId === '') {
+                typeCategorySelect.innerHTML = '<option value=\"\">Aucun type de catégorie pour cette catégorie</option>';
+                typeCategorySelect.disabled = true;
+                return;
+            }
+
+            typeCategorySelect.innerHTML = '<option value=\"\">Chargement...</option>';
+            typeCategorySelect.disabled = true;
+
+            fetch(`api/get_types_categorier_by_category.php?category_id=${categoryId}`)
+                .then(response => response.json())
+                .then(data => {
+                    typeCategorySelect.innerHTML = '';
+
+                    if (data.types && data.types.length > 0) {
+                        const placeholder = document.createElement('option');
+                        placeholder.value = '';
+                        placeholder.textContent = 'Sélectionner un type de catégorie';
+                        typeCategorySelect.appendChild(placeholder);
+
+                        data.types.forEach(t => {
+                            const option = document.createElement('option');
+                            option.value = t.id;
+                            option.textContent = t.name;
+                            if (selectedTypeCategoryId && t.id == selectedTypeCategoryId) {
+                                option.selected = true;
+                            }
+                            typeCategorySelect.appendChild(option);
+                        });
+                        typeCategorySelect.disabled = false;
+                    } else {
+                        typeCategorySelect.innerHTML = '<option value=\"\">Aucun type de catégorie pour cette catégorie</option>';
+                        typeCategorySelect.disabled = true;
+                    }
+                })
+                .catch(error => {
+                    console.error('Erreur lors du chargement des types de catégories:', error);
+                    typeCategorySelect.innerHTML = '<option value=\"\">Erreur de chargement</option>';
+                    typeCategorySelect.disabled = true;
+                });
+        }
         
         // Écouter les changements de type
         typeSelect.addEventListener('change', function() {
@@ -714,23 +830,41 @@ if (isset($_GET['success'])) {
             toggleSizeFields();
             loadCategories(typeId);
         });
+
+        // Écouter les changements de catégorie pour charger les types_categorier
+        if (categorySelect && typeCategorySelect) {
+            categorySelect.addEventListener('change', function() {
+                const categoryId = this.value;
+                loadTypesCategorier(categoryId);
+            });
+        }
         
         // Chargement initial si édition
         <?php if ($product && isset($product['type_id']) && $product['type_id']): ?>
             const currentTypeId = <?php echo $product['type_id']; ?>;
             const currentCategoryId = <?php echo $product['category_id']; ?>;
+            const currentTypeCategoryId = <?php echo isset($product['type_category_id']) && $product['type_category_id'] ? (int)$product['type_category_id'] : 'null'; ?>;
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', function() {
                     loadCategories(currentTypeId, currentCategoryId);
                     toggleSizeFields();
+                    // Charger aussi les types_categorier si une catégorie est déjà définie
+                    if (currentCategoryId) {
+                        loadTypesCategorier(currentCategoryId, currentTypeCategoryId);
+                    }
                 });
             } else {
                 loadCategories(currentTypeId, currentCategoryId);
                 toggleSizeFields();
+                if (currentCategoryId) {
+                    loadTypesCategorier(currentCategoryId, currentTypeCategoryId);
+                }
             }
         <?php else: ?>
             categorySelect.disabled = true;
-            document.addEventListener('DOMContentLoaded', toggleSizeFields);
+            document.addEventListener('DOMContentLoaded', function() {
+                toggleSizeFields();
+            });
         <?php endif; ?>
 
         // Basculer les champs de taille selon le type (sur mesure vs classique)

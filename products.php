@@ -6,10 +6,9 @@ require_once 'config/functions.php';
 $db = getDB();
 
 // Paramètres de filtrage
-$categoryId = isset($_GET['category']) ? (int)$_GET['category'] : 0;
-$typeId = isset($_GET['type']) ? (int)$_GET['type'] : 0;
-$minPrice = isset($_GET['min_price']) ? (float)$_GET['min_price'] : 0;
-$maxPrice = isset($_GET['max_price']) ? (float)$_GET['max_price'] : 0;
+$categoryId      = isset($_GET['category']) ? (int)$_GET['category'] : 0;
+$typeId          = isset($_GET['type']) ? (int)$_GET['type'] : 0;
+$typeCategoryId  = isset($_GET['type_category']) ? (int)$_GET['type_category'] : 0;
 $sort = isset($_GET['sort']) ? clean($_GET['sort']) : 'newest';
 $search = isset($_GET['search']) ? clean($_GET['search']) : '';
 $colorFilter = isset($_GET['color']) ? trim(clean($_GET['color'])) : '';
@@ -28,14 +27,9 @@ if ($typeId > 0) {
     $params[':type_id'] = $typeId;
 }
 
-if ($minPrice > 0) {
-    $where[] = "COALESCE(p.sale_price, p.price) >= :min_price";
-    $params[':min_price'] = $minPrice;
-}
-
-if ($maxPrice > 0) {
-    $where[] = "COALESCE(p.sale_price, p.price) <= :max_price";
-    $params[':max_price'] = $maxPrice;
+if ($typeCategoryId > 0) {
+    $where[] = "p.type_category_id = :type_category_id";
+    $params[':type_category_id'] = $typeCategoryId;
 }
 
 if ($search) {
@@ -77,12 +71,13 @@ $stmt->execute($params);
 $total = $stmt->fetch()['total'];
 
 // Récupérer tous les produits avec prix unitaire calculé
-$sql = "SELECT p.*, c.name as category_name, t.name as type_name,
+$sql = "SELECT p.*, c.name as category_name, t.name as type_name, tc.name AS type_category_name,
         (SELECT image_path FROM product_images WHERE product_id = p.id AND is_primary = 1 LIMIT 1) as image,
         COALESCE(p.sale_price, p.price) as unit_price
         FROM products p 
         LEFT JOIN categories c ON p.category_id = c.id 
         LEFT JOIN types t ON p.type_id = t.id 
+        LEFT JOIN types_categorier tc ON p.type_category_id = tc.id
         WHERE $whereClause 
         ORDER BY $orderBy";
 
@@ -105,6 +100,20 @@ if ($typeId > 0) {
 } else {
     $stmt = $db->query("SELECT * FROM categories ORDER BY name");
     $categories = $stmt->fetchAll();
+}
+
+// Récupérer les types de catégories (dépendent de la catégorie sélectionnée)
+if ($categoryId > 0) {
+    $stmt = $db->prepare("SELECT tc.*, c.name AS category_name 
+                          FROM types_categorier tc 
+                          INNER JOIN categories c ON tc.category_id = c.id
+                          WHERE tc.category_id = :category_id
+                          ORDER BY tc.name");
+    $stmt->execute([':category_id' => $categoryId]);
+    $typeCategories = $stmt->fetchAll();
+} else {
+    // Aucune catégorie sélectionnée : pas de types de catégories proposés
+    $typeCategories = [];
 }
 
 // Récupérer toutes les couleurs disponibles (à partir de tous les produits)
@@ -311,6 +320,33 @@ ksort($availableColors);
                 border-radius: 20px !important;
             }
         }
+
+        /* Bouton de retour */
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1.2rem;
+            margin-bottom: 1.5rem;
+            background: var(--primary-color);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: 2px solid var(--primary-color);
+        }
+
+        .back-button:hover {
+            background: transparent;
+            color: var(--primary-color);
+            transform: translateX(-3px);
+        }
+
+        .back-button::before {
+            content: "←";
+            font-size: 1.2rem;
+        }
     </style>
 </head>
 <body>
@@ -318,6 +354,7 @@ ksort($availableColors);
 
     <main class="products-page">
         <div class="container">
+            <a href="index.php" class="back-button">Retour à l'accueil</a>
             <!-- Header avec titre et compteur -->
             <div class="products-header">
                 <div class="products-header-top">
@@ -326,7 +363,7 @@ ksort($availableColors);
                         <span><?php echo $total; ?></span> produit<?php echo $total > 1 ? 's' : ''; ?>
                     </div>
                 </div>
-                <?php if ($search || $categoryId > 0 || $typeId > 0 || $minPrice > 0 || $maxPrice > 0 || $colorFilter !== ''): ?>
+                <?php if ($search || $categoryId > 0 || $typeId > 0 || $typeCategoryId > 0 || $colorFilter !== ''): ?>
                     <div class="active-filters">
                         <strong>Filtres actifs :</strong>
                         <?php if ($search): ?>
@@ -359,8 +396,30 @@ ksort($availableColors);
                         <?php if ($colorFilter !== ''): ?>
                             <span class="filter-tag">Couleur: <?php echo clean($colorFilter); ?></span>
                         <?php endif; ?>
-                        <?php if ($minPrice > 0 || $maxPrice > 0): ?>
-                            <span class="filter-tag">Prix: <?php echo $minPrice > 0 ? formatPrice($minPrice) : '0'; ?> - <?php echo $maxPrice > 0 ? formatPrice($maxPrice) : '∞'; ?></span>
+                        <?php if ($typeCategoryId > 0): ?>
+                            <?php
+                            $typeCategoryName = '';
+                            if (!empty($typeCategories)) {
+                                foreach ($typeCategories as $tc) {
+                                    if ($tc['id'] == $typeCategoryId) {
+                                        $typeCategoryName = $tc['name'];
+                                        break;
+                                    }
+                                }
+                            }
+                            // Si pas trouvé (ex: catégorie non choisie), chercher directement en base
+                            if ($typeCategoryName === '') {
+                                $stmt = $db->prepare("SELECT name FROM types_categorier WHERE id = :id");
+                                $stmt->execute([':id' => $typeCategoryId]);
+                                $rowTc = $stmt->fetch();
+                                if ($rowTc && !empty($rowTc['name'])) {
+                                    $typeCategoryName = $rowTc['name'];
+                                }
+                            }
+                            ?>
+                            <?php if ($typeCategoryName !== ''): ?>
+                                <span class="filter-tag">Type de catégorie: <?php echo clean($typeCategoryName); ?></span>
+                            <?php endif; ?>
                         <?php endif; ?>
                         <a href="products.php" class="clear-filters">✕ Effacer tous les filtres</a>
                     </div>
@@ -401,12 +460,19 @@ ksort($availableColors);
                         </div>
 
                         <div class="filter-item">
-                            <label>💰 Prix</label>
-                            <div class="price-range">
-                                <input type="number" name="min_price" id="min-price-filter" placeholder="Min" value="<?php echo $minPrice ?: ''; ?>" min="0">
-                                <span>-</span>
-                                <input type="number" name="max_price" id="max-price-filter" placeholder="Max" value="<?php echo $maxPrice ?: ''; ?>" min="0">
-                            </div>
+                            <label>Type de catégorie</label>
+                            <select name="type_category" id="type-category-filter" <?php echo $categoryId === 0 ? 'disabled' : ''; ?>>
+                                <option value="">
+                                    <?php echo $categoryId === 0 ? 'Choisissez une catégorie' : 'Tous'; ?>
+                                </option>
+                                <?php if ($categoryId > 0): ?>
+                                    <?php foreach ($typeCategories as $tc): ?>
+                                        <option value="<?php echo (int)$tc['id']; ?>" <?php echo $typeCategoryId == $tc['id'] ? 'selected' : ''; ?>>
+                                            <?php echo clean($tc['name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </select>
                         </div>
 
                         <div class="filter-item">
@@ -1099,26 +1165,24 @@ ksort($availableColors);
         // Filtre par catégorie - application immédiate
         if (categoryFilter) {
             categoryFilter.addEventListener('change', function() {
+                // Lorsqu'on change de catégorie, réinitialiser le type de catégorie
+                const typeCategorySelect = document.getElementById('type-category-filter');
+                if (typeCategorySelect) {
+                    typeCategorySelect.value = '';
+                }
+                applyFilters();
+            });
+        }
+
+        // Filtre par type de catégorie - application immédiate
+        const typeCategoryFilter = document.getElementById('type-category-filter');
+        if (typeCategoryFilter) {
+            typeCategoryFilter.addEventListener('change', function() {
                 applyFilters();
             });
         }
         
-        // Filtre par prix - application immédiate
-        const minPriceFilter = document.getElementById('min-price-filter');
-        const maxPriceFilter = document.getElementById('max-price-filter');
         const colorHiddenInput = document.getElementById('color-filter');
-        
-        if (minPriceFilter) {
-            minPriceFilter.addEventListener('change', function() {
-                applyFilters();
-            });
-        }
-        
-        if (maxPriceFilter) {
-            maxPriceFilter.addEventListener('change', function() {
-                applyFilters();
-            });
-        }
 
         // Select couleur personnalisé
         const colorSelectWrapper = document.getElementById('color-select');

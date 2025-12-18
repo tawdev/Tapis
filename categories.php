@@ -57,6 +57,33 @@ $categories = $stmt->fetchAll();
                 grid-template-columns: 1fr;
             }
         }
+
+        /* Bouton de retour */
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1.2rem;
+            margin-bottom: 1.5rem;
+            background: var(--primary-color);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: 2px solid var(--primary-color);
+        }
+
+        .back-button:hover {
+            background: transparent;
+            color: var(--primary-color);
+            transform: translateX(-3px);
+        }
+
+        .back-button::before {
+            content: "←";
+            font-size: 1.2rem;
+        }
     </style>
 </head>
 <body>
@@ -64,6 +91,7 @@ $categories = $stmt->fetchAll();
 
     <main class="categories-page">
         <div class="container">
+            <a href="index.php" class="back-button">Retour à l'accueil</a>
             <div class="page-header">
                 <h1>Nos Catégories</h1>
                 <p>Découvrez notre sélection de tapis par catégorie</p>
@@ -88,11 +116,6 @@ $categories = $stmt->fetchAll();
                                 </div>
                                 <div class="category-content">
                                     <h2><?php echo clean($category['name']); ?></h2>
-                                    <?php if (!empty($category['type_name'])): ?>
-                                        <p style="margin: 0.15rem 0 0.35rem; font-size: 0.9rem; color: var(--text-light);">
-                                            Type : <strong style="color: var(--primary-color);"><?php echo clean($category['type_name']); ?></strong>
-                                        </p>
-                                    <?php endif; ?>
                                     <?php if ($category['description']): ?>
                                         <p><?php echo clean($category['description']); ?></p>
                                     <?php endif; ?>

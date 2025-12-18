@@ -542,39 +542,93 @@
 
 /* Filters */
 .admin-filters {
-    display: flex;
-    gap: 0.75rem;
-    margin-bottom: 2rem;
-    flex-wrap: wrap;
-    padding: 1rem;
-    background: var(--white);
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    margin-bottom: 1.5rem;
 }
 
-.filter-btn {
-    padding: 0.65rem 1.25rem;
-    background: var(--white);
+.admin-filters-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem 1rem;
+}
+
+.filters-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+    flex: 1;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.filter-group label {
+    margin: 0 0 0.1rem 0;
+    font-weight: 600;
     color: var(--text-dark);
-    text-decoration: none;
-    border-radius: 8px;
-    border: 2px solid var(--border-color);
-    transition: all 0.3s;
-    font-weight: 500;
     font-size: 0.9rem;
 }
 
-.filter-btn:hover {
-    background: var(--light-color);
-    border-color: var(--primary-color);
-    transform: translateY(-2px);
+.filter-group input,
+.filter-group select {
+    min-width: 190px;
+    padding: 0.55rem 0.8rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    font-size: 0.9rem;
+    background: #fafafa;
+    transition: all 0.2s ease;
 }
 
-.filter-btn.active {
-    background: linear-gradient(135deg, var(--primary-color) 0%, var(--dark-color) 100%);
-    color: var(--white);
+.filter-group input:focus,
+.filter-group select:focus {
+    outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 4px 12px rgba(139,69,19,0.3);
+    box-shadow: 0 0 0 2px rgba(139,69,19,0.12);
+    background: #fff;
+}
+
+.filters-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.filters-actions .btn {
+    padding-inline: 1.25rem;
+}
+
+.filters-active-badge {
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    background: rgba(139,69,19,0.06);
+    color: var(--primary-color);
+    border: 1px solid rgba(139,69,19,0.25);
+}
+
+@media (max-width: 768px) {
+    .filter-group {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .filter-group label {
+        width: 100%;
+    }
+
+    .filter-group input,
+    .filter-group select {
+        width: 100%;
+    }
+
+    .admin-filters-form {
+        align-items: stretch;
+    }
 }
 
 /* Product Images */

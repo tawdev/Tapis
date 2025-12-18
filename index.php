@@ -39,6 +39,56 @@ $bestSellers = $stmt->fetchAll();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Accueil - <?php echo SITE_NAME; ?></title>
     <link rel="stylesheet" href="assets/css/style.css">
+    <style>
+        /* Style pour la description dans les cartes de catégories */
+        .category-card .category-content {
+            padding: 1.5rem;
+        }
+
+        .category-card .category-content h3 {
+            padding: 0;
+            margin-bottom: 0.75rem;
+        }
+
+        .category-card .category-description {
+            color: var(--text-light);
+            font-size: 0.9rem;
+            line-height: 1.5;
+            margin: 0;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Grille de 4 colonnes sur desktop */
+        @media (min-width: 1024px) {
+            .categories-grid {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+        }
+
+        /* Responsive pour tablettes */
+        @media (max-width: 1023px) and (min-width: 768px) {
+            .categories-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+
+        /* Responsive pour mobile */
+        @media (max-width: 767px) {
+            .categories-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 480px) {
+            .categories-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
 <body>
     <?php include 'includes/header.php'; ?>
@@ -67,7 +117,12 @@ $bestSellers = $stmt->fetchAll();
                                     <div class="placeholder-image"><?php echo substr($category['name'], 0, 1); ?></div>
                                 <?php endif; ?>
                             </div>
-                            <h3><?php echo clean($category['name']); ?></h3>
+                            <div class="category-content">
+                                <h3><?php echo clean($category['name']); ?></h3>
+                                <?php if (!empty($category['description'])): ?>
+                                    <p class="category-description"><?php echo clean($category['description']); ?></p>
+                                <?php endif; ?>
+                            </div>
                         </a>
                     <?php endforeach; ?>
                 </div>

@@ -10,12 +10,41 @@ require_once 'config/functions.php';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>À propos - <?php echo SITE_NAME; ?></title>
     <link rel="stylesheet" href="assets/css/style.css">
+    <style>
+        /* Bouton de retour */
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1.2rem;
+            margin-bottom: 1.5rem;
+            background: var(--primary-color);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: 2px solid var(--primary-color);
+        }
+
+        .back-button:hover {
+            background: transparent;
+            color: var(--primary-color);
+            transform: translateX(-3px);
+        }
+
+        .back-button::before {
+            content: "←";
+            font-size: 1.2rem;
+        }
+    </style>
 </head>
 <body>
     <?php include 'includes/header.php'; ?>
 
     <main class="about-page">
         <div class="container">
+            <a href="index.php" class="back-button">Retour à l'accueil</a>
             <div class="page-header">
                 <h1>À propos de nous</h1>
                 <p>Découvrez l'histoire de waootapis</p>
